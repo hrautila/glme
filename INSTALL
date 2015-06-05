@@ -1,0 +1,23 @@
+GLME - Gob Like Message Encoding
+--------------------------------
+
+## Building from GIT sources.
+
+   Need autoconf, automake and libtool packages.
+
+   $ libtoolize
+   $ aclocal
+   $ autoconf
+   $ autoheader
+   $ automake --add-missing
+   $ ./configure CFLAGS=-O3
+   $ make
+   $ sudo make install
+
+## Installation
+
+   $ ./configure CFLAGS=-O3
+   $ make
+   $ sudo make install
+
+
