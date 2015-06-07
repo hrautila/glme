@@ -13,11 +13,12 @@ Delta is the index offset from the previous structure field to this field. If de
 greater than one fields have been omitted from the encoded stream. End of the type is
 indicated with zero delta value.
 
-The implementation is based on user defined encoding and decoding functions for each
-message. Fields may be basic C-types - signed or unsigned ints, single or double
-precision floating point numbers, fixed size vectors, variable size strings, arrays
-of bae types, embedded structs, pointers to structs or non-cyclic data structures
-(like linked list, binary trees). 
+Messages are descripted as standard C structures. Message or structure type spesific
+encoding and decoding functions are written with GLME helper macros. Fields may be
+basic C-types - signed or unsigned ints, single or double precision floating point
+numbers, fixed size vectors, variable size strings, arrays of base types, embedded
+structs, pointers to structs or non-cyclic data structures (like linked list,
+binary trees). 
 
 ## Using
 
