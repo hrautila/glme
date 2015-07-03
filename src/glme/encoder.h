@@ -245,7 +245,7 @@ int glme_encode_ulong(glme_encoder_t *enc, unsigned long v)
 __INLINE__
 int glme_encode_long(glme_encoder_t *enc, long v)
 {
-  return glme_encode_uint64(enc, (int64_t)v);
+  return glme_encode_int64(enc, (int64_t)v);
 }
 
 /**
@@ -256,7 +256,7 @@ int glme_encode_long(glme_encoder_t *enc, long v)
 __INLINE__
 int glme_encode_uint(glme_encoder_t *enc, unsigned int v)
 {
-  return glme_encode_int64(enc, (uint64_t)v);
+  return glme_encode_uint64(enc, (uint64_t)v);
 }
 
 /**
