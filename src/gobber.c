@@ -108,7 +108,7 @@ int __gob_decode_u64(uint64_t *ull, char *buf, size_t buf_size)
 
   *ull = 0;
   if (buf_size < 1)
-    return 0;
+    return 1;  // return 1 to indicate underflow, at least one byte needed
 
   if (*buf >= 0 && *buf < 128) {
     *ull = (uint64_t)*buf;
