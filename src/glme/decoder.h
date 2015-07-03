@@ -147,6 +147,9 @@ void glme_decoder_reset(glme_decoder_t *dec)
  *   The decoder
  * @parm increase
  *   Number of bytes to increase the buffer
+ *
+ * Resizing decoder with externally allocated buffer may cause memory leaks
+ * if old buffer is not properly released elsewhere.
  */
 __INLINE__
 void glme_decoder_resize(glme_decoder_t *dec, size_t increase)
@@ -157,7 +160,8 @@ void glme_decoder_resize(glme_decoder_t *dec, size_t increase)
       // copy if we have buffer and content in it.
       if (dec->count > 0)
 	memcpy(b, dec->buf, dec->count);
-      free(dec->buf);
+      if (dec->owner)
+        free(dec->buf);
     }
     dec->buf = b;
     dec->buflen += increase;
@@ -174,6 +178,7 @@ void glme_decoder_setbuf(glme_decoder_t *dec, char *buf, size_t buflen)
     dec->buf = buf;
     dec->buflen = buflen;
     dec->count = dec->current = 0;
+    dec->owner = 0;
   }
 }
 
