@@ -77,6 +77,25 @@
     }						\
   } while (0)
 
+
+/**
+ * Encode byte array of length len pointed by ptr.
+ */
+#define GLME_ENCODE_BYTES(enc, fno, ptr, len)	\
+  do {						\
+    if ( (ptr) && (len) != 0 ) {                \
+      __n = glme_encode_uint64(enc, __delta);	\
+      if (__n < 0) return -(fno+10);            \
+      __nc += __n;                              \
+      __n = glme_encode_bytes(enc, ptr, len);	\
+      if (__n < 0) return -(fno+10);            \
+      __nc += __n;                              \
+      __delta = 1;				\
+    } else {					\
+      __delta += 1;				\
+    }						\
+  } while (0)
+
 /**
  * Encode variable length string.
  */
@@ -285,7 +304,7 @@
 #define GLME_DECODE_VEC(dec, fno, vec, len)		\
     do {                                                \
         if (__delta == 1) {				\
-          __n = glme_decode_bytes(dec, vec, len);       \
+          __n = glme_decode_vec(dec, vec, len);       \
           if (__n < 0) return -(fno+10);                \
           __nc += __n;					\
           __n = glme_decode_uint64(dec, &__delta);	\
@@ -293,6 +312,25 @@
           __nc += __n;					\
         } else {                                        \
           memset(vec, 0, len);				\
+          if (__delta > 0 ) __delta -= 1;               \
+        }                                               \
+    } while (0)
+
+
+/**
+ * Decode variable size byte vector, allocates space for data;
+ */
+#define GLME_DECODE_BYTES(dec, fno, ptr)		\
+    do {                                                \
+        if (__delta == 1) {				\
+          __n = glme_decode_bytes(dec, ptr);       \
+          if (__n < 0) return -(fno+10);                \
+          __nc += __n;					\
+          __n = glme_decode_uint64(dec, &__delta);	\
+          if (__n < 0) return -(fno+10);                \
+          __nc += __n;					\
+        } else {                                        \
+          *(ptr) = (void *)0;                           \
           if (__delta > 0 ) __delta -= 1;               \
         }                                               \
     } while (0)
