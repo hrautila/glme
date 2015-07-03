@@ -21,6 +21,7 @@ typedef struct glme_decoder {
   size_t buflen;	// size of buffer in bytes
   size_t count;		// number of data bytes in buffer
   size_t current;	// current read pointer (current <= count <= buflen)
+  int owner;
 } glme_decoder_t;
 
 /**
@@ -44,11 +45,37 @@ glme_decoder_t *glme_decoder_init(glme_decoder_t *dec, size_t len)
       dec->buf = malloc(len);
       if (! dec->buf)
 	return (glme_decoder_t *)0;
+      dec->owner = 1;
     } else {
       dec->buf = (char *)0;
     }
     dec->buflen = dec->buf ? len : 0;
   }
+  return dec;
+}
+
+/**
+ * Make decoder from spesified data buffer.
+ *
+ * @param dec
+ *   Decoder
+ * @param data
+ *   Data buffer
+ * @param len
+ *   Length of the buffer
+ * @param count
+ *   Length of the encoded content in the data buffer
+ * @return
+ *   Initialized decoder
+ */
+__INLINE__
+glme_decoder_t *glme_decoder_make(glme_decoder_t *dec, char *data, size_t len, size_t count)
+{
+  dec->buf = data;
+  dec->buflen = len;
+  dec->count = count;
+  dec->current = 0;
+  dec->owner = 0;
   return dec;
 }
 
@@ -77,7 +104,7 @@ __INLINE__
 void glme_decoder_close(glme_decoder_t *dec)
 {
   if (dec) {
-    if (dec->buf)
+    if (dec->buf && dec->owner)
       free(dec->buf);
     dec->buf = (char *)0;
     dec->buflen = 0;
@@ -93,7 +120,7 @@ __INLINE__
 void glme_decoder_free(glme_decoder_t *dec)
 {
   if (dec) {
-    if (dec->buf)
+    if (dec->buf && dec->owner)
       free(dec->buf);
     dec->buflen = 0;
     dec->count = 0;
@@ -165,6 +192,9 @@ int glme_decoder_readm(glme_decoder_t *dec, int fd);
  *   Decoder
  * @param v
  *   Pointer to value store location.
+ * @return
+ *   Number of bytes read from decoder. Negative value indicates 
+ *   underflow and number of bytes needed to decode value.
  */
 int glme_decode_uint64(glme_decoder_t *dec, uint64_t *v);
 
@@ -173,6 +203,7 @@ int glme_decode_uint64(glme_decoder_t *dec, uint64_t *v);
  * Decode unsigned 64 bit integer from the specified decoder without
  * moving internal read pointers.
  *
+ * @see glme_decode_uint64
  */
 int glme_decode_uint64_peek(glme_decoder_t *dec, uint64_t *v);
 
@@ -211,12 +242,19 @@ int glme_decode_float(glme_decoder_t *dec, float *v)
   double dv;
   n = glme_decode_double(dec, &dv);
   *v = n < 0 ? 0.0 : (float)dv;
+  return n;
 }
 
 /**
  * Decode fixed length bytes stream from the specified decoder.
  */
-int glme_decode_bytes(glme_decoder_t *dec, void *s, size_t len);
+int glme_decode_vec(glme_decoder_t *dec, void *s, size_t len);
+
+/**
+ * Decode variable length byte array from the specified decoder.
+ * Allocates space for decoded data.
+ */
+int glme_decode_bytes(glme_decoder_t *dec, void **s);
 
 /**
  * Decode variable length string from the specified decoder.
@@ -260,7 +298,7 @@ int glme_decode_long(glme_decoder_t *dec, long *d)
  * @see glme_decode_uint64
  */
 __INLINE__
-int glme_decode_uint(glme_decoder_t *dec, unsigned long *u)
+int glme_decode_uint(glme_decoder_t *dec, unsigned int *u)
 {
   int n;
   uint64_t u64;
