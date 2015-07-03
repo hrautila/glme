@@ -21,7 +21,7 @@ typedef struct glme_encoder {
   char *buf;
   size_t buflen;	// size of buffer in bytes
   size_t count;		// number of bytes writen into the buffer (count <= buflen)
-  char scratch[16];
+  int owner;
 } glme_encoder_t;
 
 
@@ -41,15 +41,42 @@ glme_encoder_t *glme_encoder_init(glme_encoder_t *enc, size_t len)
 {
   if (enc) {
     enc->count = 0;
+    enc->owner = 0;
     // allow initializing to zero size
     if (len > 0) {
       enc->buf = malloc(len);
       if (! enc->buf)
 	return (glme_encoder_t *)0;
+      enc->owner = 1;
     } else {
       enc->buf = (char *)0;
     }
     enc->buflen = enc->buf ? len : 0;
+  }
+  return enc;
+}
+
+/**
+ * Initialize encoder from externally allocated space.
+ *
+ * @param enc
+ *    Encoder to initialize
+ * @param buf
+ *    External buffer space
+ * @param len
+ *    Size of the initial encoding buffer.
+ *
+ * @returns
+ *    Pointer to initialized encoder. Null pointer of failure.
+ */
+__INLINE__
+glme_encoder_t *glme_encoder_make(glme_encoder_t *enc, char *buf, size_t len)
+{
+  if (enc) {
+    enc->count = 0;
+    enc->owner = 0;
+    enc->buf = buf;
+    enc->buflen = len;
   }
   return enc;
 }
@@ -82,7 +109,7 @@ __INLINE__
 void glme_encoder_close(glme_encoder_t *enc)
 {
   if (enc) {
-    if (enc->buf)
+    if (enc->buf && enc->owner)
       free(enc->buf);
     enc->buflen = 0;
     enc->count = 0;
@@ -96,7 +123,7 @@ __INLINE__
 void glme_encoder_free(glme_encoder_t *enc)
 {
   if (enc) {
-    if (enc->buf)
+    if (enc->buf && enc->owner)
       free(enc->buf);
     enc->buflen = 0;
     enc->count = 0;

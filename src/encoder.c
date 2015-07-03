@@ -15,10 +15,10 @@
 int glme_encoder_writem(glme_encoder_t *enc, int fd)
 {
   int n;
+  char tmp[16];
+  n = gob_encode_uint64(tmp, sizeof(tmp), enc->count);
 
-  n = gob_encode_uint64(enc->scratch, sizeof(enc->scratch), enc->count);
-
-  if (write(fd, enc->scratch, n) < 0)
+  if (write(fd, tmp, n) < 0)
     return -1;
   if (write(fd, enc->buf, enc->count) < 0)
     return -1;
