@@ -80,7 +80,7 @@ int glme_decode_uint64(glme_decoder_t *dec, uint64_t *v)
   n = gob_decode_uint64(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n > dec->count - dec->current) {
     // under flow
-    return -1;
+    return -n;
   }
   dec->current += n;
   return n;
@@ -93,7 +93,7 @@ int glme_decode_uint64_peek(glme_decoder_t *dec, uint64_t *v)
   n = gob_decode_uint64(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n > dec->count - dec->current) {
     // under flow
-    return -1;
+    return -n;
   }
   return n;
 }
@@ -127,13 +127,13 @@ int glme_decode_double(glme_decoder_t *dec, double *v)
   n = gob_decode_double(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n > dec->count - dec->current) {
     // under flow
-    return -1;
+    return -n;
   }
   dec->current += n;
   return n;
 }
 
-int glme_decode_bytes(glme_decoder_t *dec, void *s, size_t len)
+int glme_decode_vec(glme_decoder_t *dec, void *s, size_t len)
 {
   int n;
   int64_t dlen = 0;
@@ -153,7 +153,7 @@ int glme_decode_bytes(glme_decoder_t *dec, void *s, size_t len)
   return n + dlen;
 }
 
-int glme_decode_string(glme_decoder_t *dec, char **s)
+int glme_decode_bytes(glme_decoder_t *dec, void **s)
 {
   int n;
   int64_t dlen = 0;
@@ -163,6 +163,10 @@ int glme_decode_string(glme_decoder_t *dec, char **s)
     // underflow
     return -n;
   }
+  if (dlen > dec->count - dec->current - n) {
+    // underflow
+    return -(dlen+n);
+  }
   nb = malloc(dlen);
   if (nb) {
     memcpy(nb, &dec->buf[dec->current+n], dlen);
@@ -170,6 +174,11 @@ int glme_decode_string(glme_decoder_t *dec, char **s)
   }
   dec->current += n + dlen;
   return n + dlen;
+}
+
+int glme_decode_string(glme_decoder_t *dec, char **s)
+{
+  return glme_decode_bytes(dec, (void **)s);
 }
 
 int glme_decode_end_struct(glme_decoder_t *dec)
