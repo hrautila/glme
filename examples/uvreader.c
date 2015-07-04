@@ -1,6 +1,4 @@
 
-// Copyright (c) Harri Rautila, 2015
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +26,8 @@ int glme_decode_data_t(glme_decoder_t *dec, data_t *msg)
   GLME_DECODE_END;
 }
 
+#define MAX_MESSAGE (1 << 24)
+
 typedef struct client_s {
   // this 'subclass' of uv_tcp_t
   uv_tcp_t source;
@@ -41,10 +41,11 @@ typedef struct client_s {
   // field for reading message length prefix
   char intmp[16];
   int inalloc;
+  int plen;             // prefix length
 
   // fields for reading message data
   char *inbuf;
-  unsigned int inlen;
+  unsigned int inlen;   // length of encoded messsage
 
   int done;
 } client_t;
@@ -57,6 +58,7 @@ void client_init(client_t *clnt)
   clnt->inalloc = 0;
   clnt->inlen = 0;
   clnt->done = 0;
+  clnt->plen = 0;
 }
 
 
@@ -70,11 +72,11 @@ uv_buf_t alloc_buffer(uv_handle_t *handle, size_t ssize)
   if (clnt->state == 0) {
     // reading message length
     if (clnt->inalloc == 0) {
-      clnt->inalloc = 3;
+      clnt->inalloc = 1;
       return uv_buf_init(clnt->intmp, clnt->inalloc);
     }
-    clnt->inalloc = sizeof(clnt->intmp);
-    return uv_buf_init(&clnt->intmp[3], clnt->inalloc-3);
+    clnt->inalloc = clnt->plen; //sizeof(clnt->intmp);
+    return uv_buf_init(&clnt->intmp[1], clnt->inalloc-1);
   }
 
   // reading message body; allow data upto missing number of bytes
@@ -104,7 +106,7 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
     // buffer requested earlier was not needed. 
     if (clnt->state == 0) {
       // undo previous allocation request
-      clnt->inalloc = clnt->inalloc == 3 ? 0 : 3;
+      clnt->inalloc = clnt->inalloc == 1 ? 0 : 1;
     }
     return;
   }
@@ -115,19 +117,19 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
     glme_decoder_make(&dec, clnt->intmp, sizeof(clnt->intmp), clnt->nread);
     if ((n = glme_decode_uint(&dec, &clnt->inlen)) < 0) {
       // under flow
-      clnt->inlen = 0;
+      clnt->plen = -n;
       return;
     }
 
+    if (clnt->inlen > MAX_MESSAGE) {
+      fprintf(stderr, "Message to big ...\n");
+      clnt->done = 1;
+      uv_close((uv_handle_t *)stream, NULL);
+    }
     clnt->state = 1;
     clnt->inbuf = malloc(clnt->inlen);
-    // if part of message in tmpbuf, copy it to the start inbuf
-    if (n < clnt->nread) {
-      memcpy(clnt->inbuf, &clnt->intmp[n], clnt->nread-n);
-      clnt->nread -= n;
-    } else {
-      clnt->nread = 0;
-    }
+    clnt->nread = 0;
+    clnt->plen = 0;
     return;
   }
 
