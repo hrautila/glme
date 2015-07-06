@@ -7,71 +7,42 @@
 
 #define NUMTESTS 20
 
-#define MSG_LIST_ID 32
-#define MSG_LINK_ID 33
+typedef struct data_t {
+  int64_t *vec;
+  uint64_t vlen;
+} data_t;
 
-
-typedef struct link {
-  int val;
-  struct link *next;
-} link_t;
-
-
-int glme_encode_link_t(glme_buf_t *enc, link_t *rc)
+int datacmp(data_t *a, data_t *b)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_LINK_ID);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_INT(enc, 0, rc->val);
-  GLME_ENCODE_STRUCT_PTR(enc, 1, rc->next, glme_encode_link_t);
-  GLME_ENCODE_END;
-}
+  int k;
+  if (a->vlen != b->vlen)
+    return a->vlen > b->vlen ? -1 : 1;
 
-int glme_decode_link_t(glme_buf_t *dec, link_t *rc)
-{
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_LINK_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_INT(dec, 0, &rc->val);
-  GLME_DECODE_STRUCT_PTR(dec, 1, rc->next, glme_decode_link_t, link_t);
-  GLME_DECODE_END;
-}
-
-
-typedef struct list_t {
-  link_t *head;
-} list_t;
-
-int listcmp(list_t *a, list_t *b)
-{
-  link_t *n0, *n1;
-  for (n0 = a->head, n1 = b->head; n0 && n1; n0 = n0->next, n1 = n1->next) {
-    if (n0->val != n1->val)
-      return n0->val > n1->val ? -1 : 1;
+  for (k = 0; k < a->vlen; k++) {
+    if (a->vec[k] != b->vec[k])
+      return a->vec[k] > b->vec[k] ? -1 : 1;
   }
-  if (n0)
-    return -1;
-  if (n1)
-    return 1;
   return 0;
 }
 
-int glme_encode_list_t(glme_buf_t *enc, list_t *lst)
+#define MSG_DATA_ID 32
+
+int glme_encode_data_t(glme_buf_t *enc, data_t *msg)
 {
   GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_LIST_ID);
+  GLME_ENCODE_TYPE(enc, MSG_DATA_ID);
   GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_STRUCT_PTR(enc, 0, lst->head, glme_encode_link_t);
+  GLME_ENCODE_ARRAY(enc, 0, msg->vec, msg->vlen, long);
   GLME_ENCODE_END;
 }
 
 
-int glme_decode_list_t(glme_buf_t *dec, list_t *lst)
+int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
 {
   GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_LIST_ID);
+  GLME_DECODE_TYPE(dec, MSG_DATA_ID);
   GLME_DECODE_DELTA(dec);
-  GLME_DECODE_STRUCT_PTR(dec, 0, lst->head, glme_decode_link_t, link_t);
+  GLME_DECODE_VAR_ARRAY(dec, 0, msg->vec, msg->vlen, long);
   GLME_DECODE_END;
 }
 
@@ -98,7 +69,7 @@ int64_t read_tsc()
   return ((uint64_t)reshi << 32) | reslo;
 }
 
-uint64_t run_test(uint64_t clocks[], glme_buf_t *encoder, list_t *msg)
+uint64_t run_test(uint64_t clocks[], glme_buf_t *encoder, data_t *msg)
 {
   int i, j, k, n;
   uint64_t before, nb;
@@ -107,7 +78,7 @@ uint64_t run_test(uint64_t clocks[], glme_buf_t *encoder, list_t *msg)
     before = read_tsc();
     // ------ start of test ---
 
-    n = glme_encode_list_t(encoder, msg);
+    n = glme_encode_data_t(encoder, msg);
 
     // ------ end of test -----
     clocks[k] = read_tsc() - before;
@@ -133,28 +104,33 @@ int main(int argc, char **argv)
   int n, i, k, minind, maxind, encode, opt;
   uint64_t before, overhead, clocks[NUMTESTS];
   uint64_t tmin, tmax;
-  double tavg, tcalc, bps_min, bps_avg, bps_max, clockrate;
+  double tavg, tcalc, bps_min, bps_avg, bps_max, nps_max, clockrate;
 
-  list_t lst;
-  link_t *elems;
-  
+  data_t msg, rcv;
   glme_buf_t encoder;
   uint64_t rlen, nbytes, sbytes;
 
   long vlen;
+  double scale = 1.0;
 
   clockrate = 2.40;  // GHz
   vlen = 100000;
 
-  memset(&lst, 0, sizeof(lst));
+  memset(&msg, 0, sizeof(msg));
+  memset(&rcv, 0, sizeof(rcv));
 
-  while ((opt = getopt(argc, argv, "R:")) != -1) {
+  vlen = 100000;
+
+  while ((opt = getopt(argc, argv, "R:S:")) != -1) {
     switch (opt) {
     case 'R':
       clockrate = strtod(optarg, (char **)0);
       break;
+    case 'S':
+      scale = strtod(optarg, (char **)0);
+      break;
     default:
-      printf("perf_da1 [-R clockrate] [arraylen]\n");
+      printf("perf_da1 [-R clockrate -S scale] [arraylen]\n");
       exit(1);
     }
   }
@@ -162,21 +138,17 @@ int main(int argc, char **argv)
   if (optind < argc)
     vlen = strtol(argv[optind], (char **)0, 10);
 
-  glme_buf_init(&encoder, sizeof(link_t)*vlen);
+  glme_buf_init(&encoder, 9*vlen);
 
   // generate random doubles
-  nbytes = vlen*sizeof(link_t);
-  elems = (link_t *)calloc(vlen, sizeof(link_t));
-  for (k = 0; k < vlen-1; k++) {
-    elems[k].val = k;
-    elems[k].next = &elems[k+1];
+  srand48(time(0));
+  nbytes = vlen*sizeof(double);
+  msg.vec = malloc(vlen*sizeof(double));
+  msg.vlen = vlen;
+  for (k = 0; k < vlen; k++) {
+    msg.vec[k] = mrand48();
   }
-  elems[vlen-1].val = vlen-1;
-  elems[vlen-1].next = (link_t *)0;
-  lst.head = elems;
-
-  
-  sbytes = vlen*sizeof(link_t) + sizeof(list_t);
+  sbytes = vlen*sizeof(int64_t) + sizeof(msg);
 
   // calculate overhead
   for (i = 0; i < NUMTESTS; i++) {
@@ -191,7 +163,7 @@ int main(int argc, char **argv)
 
   // -------------------------------------------------------
   // run & measure
-  nbytes = run_test(clocks, &encoder, &lst);
+  nbytes = run_test(clocks, &encoder, &msg);
 
   // -------------------------------------------------------
 
@@ -221,8 +193,9 @@ int main(int argc, char **argv)
   bps_max = clockrate/((double)tmin/sbytes);
   bps_avg = clockrate/((double)tavg/sbytes);
   bps_min = clockrate/((double)tmax/sbytes);
-  printf("[%7ld -> %7ld]: %.5f  %.5f  %.5f (GB/s)\n",
-	 sbytes, nbytes, bps_min, bps_avg, bps_max);
+  nps_max = clockrate/((double)tmin/nbytes);
+  printf("[%7ld -> %7ld]: %.5f  %.5f  %.5f [%.5f](GB/s)\n",
+	 sbytes, nbytes, bps_min, bps_avg, bps_max, nps_max);
 
 
 }

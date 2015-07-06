@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "glme/glme.h"
+#include "glme.h"
 
 #define NUMTESTS 20
 
@@ -27,7 +27,7 @@ int datacmp(data_t *a, data_t *b)
 
 #define MSG_DATA_ID 32
 
-int glme_encode_data_t(glme_encoder_t *enc, data_t *msg)
+int glme_encode_data_t(glme_buf_t *enc, data_t *msg)
 {
   GLME_ENCODE_STDDEF;
   GLME_ENCODE_TYPE(enc, MSG_DATA_ID);
@@ -37,7 +37,7 @@ int glme_encode_data_t(glme_encoder_t *enc, data_t *msg)
 }
 
 
-int glme_decode_data_t(glme_decoder_t *dec, data_t *msg)
+int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
 {
   GLME_DECODE_STDDEF;
   GLME_DECODE_TYPE(dec, MSG_DATA_ID);
@@ -69,7 +69,7 @@ int64_t read_tsc()
   return ((uint64_t)reshi << 32) | reslo;
 }
 
-uint64_t run_test(uint64_t clocks[], glme_encoder_t *encoder, data_t *msg)
+uint64_t run_test(uint64_t clocks[], glme_buf_t *encoder, data_t *msg)
 {
   int i, j, k, n;
   uint64_t before, nb;
@@ -83,7 +83,7 @@ uint64_t run_test(uint64_t clocks[], glme_encoder_t *encoder, data_t *msg)
     // ------ end of test -----
     clocks[k] = read_tsc() - before;
 
-    glme_encoder_reset(encoder);
+    glme_buf_clear(encoder);
     if (k == 0)
       nb = (uint64_t)n;
   }
@@ -104,11 +104,10 @@ int main(int argc, char **argv)
   int n, i, k, minind, maxind, encode, opt;
   uint64_t before, overhead, clocks[NUMTESTS];
   uint64_t tmin, tmax;
-  double tavg, tcalc, bps_min, bps_avg, bps_max, clockrate;
+  double tavg, tcalc, bps_min, bps_avg, bps_max, nps_max, clockrate;
 
   data_t msg, rcv;
-  glme_encoder_t encoder;
-  glme_decoder_t decoder;
+  glme_buf_t encoder;
   uint64_t rlen, nbytes, sbytes;
 
   long vlen;
@@ -139,7 +138,7 @@ int main(int argc, char **argv)
   if (optind < argc)
     vlen = strtol(argv[optind], (char **)0, 10);
 
-  glme_encoder_init(&encoder, 9*vlen);
+  glme_buf_init(&encoder, 9*vlen);
 
   // generate random doubles
   srand48(time(0));
@@ -194,8 +193,9 @@ int main(int argc, char **argv)
   bps_max = clockrate/((double)tmin/sbytes);
   bps_avg = clockrate/((double)tavg/sbytes);
   bps_min = clockrate/((double)tmax/sbytes);
-  printf("[%7ld -> %7ld]: %.5f  %.5f  %.5f (GB/s)\n",
-	 sbytes, nbytes, bps_min, bps_avg, bps_max);
+  nps_max = clockrate/((double)tmin/nbytes);
+  printf("[%7ld -> %7ld]: %.5f  %.5f  %.5f [%.5f] (GB/s)\n",
+	 sbytes, nbytes, bps_min, bps_avg, bps_max, nps_max);
 
 
 }
