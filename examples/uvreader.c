@@ -6,7 +6,7 @@
 #include <sys/queue.h>
 
 #include <uv.h>
-#include <glme/glme.h>
+#include <glme.h>
 
 typedef struct data_t {
   int  blen;
@@ -16,7 +16,7 @@ typedef struct data_t {
 
 #define MSG_DATA_ID 32
 
-int glme_decode_data_t(glme_decoder_t *dec, data_t *msg)
+int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
 {
   GLME_DECODE_STDDEF;
   GLME_DECODE_TYPE(dec, MSG_DATA_ID);
@@ -25,8 +25,6 @@ int glme_decode_data_t(glme_decoder_t *dec, data_t *msg)
   GLME_DECODE_BYTES(dec, 1, (void **)&msg->base);
   GLME_DECODE_END;
 }
-
-#define MAX_MESSAGE (1 << 24)
 
 typedef struct client_s {
   // this 'subclass' of uv_tcp_t
@@ -41,11 +39,11 @@ typedef struct client_s {
   // field for reading message length prefix
   char intmp[16];
   int inalloc;
-  int plen;             // prefix length
+  int plen; 
 
   // fields for reading message data
   char *inbuf;
-  unsigned int inlen;   // length of encoded messsage
+  unsigned int inlen;  // length of encoded messsage
 
   int done;
 } client_t;
@@ -89,7 +87,7 @@ uv_buf_t alloc_buffer(uv_handle_t *handle, size_t ssize)
 void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
 {
   int n, ok;
-  glme_decoder_t dec;
+  glme_buf_t dec;
   data_t data;
   client_t *clnt = (client_t *)stream->data;
   
@@ -114,21 +112,22 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
   if (clnt->state == 0) {
     // reading message length prefix
     clnt->nread += nread;
-    glme_decoder_make(&dec, clnt->intmp, sizeof(clnt->intmp), clnt->nread);
+    glme_buf_make(&dec, clnt->intmp, sizeof(clnt->intmp), clnt->nread);
     if ((n = glme_decode_uint(&dec, &clnt->inlen)) < 0) {
       // under flow
       clnt->plen = -n;
       return;
     }
 
-    if (clnt->inlen > MAX_MESSAGE) {
-      fprintf(stderr, "Message to big ...\n");
-      clnt->done = 1;
-      uv_close((uv_handle_t *)stream, NULL);
-    }
     clnt->state = 1;
     clnt->inbuf = malloc(clnt->inlen);
-    clnt->nread = 0;
+    // if part of message in tmpbuf, copy it to the start inbuf
+    if (n < clnt->nread) {
+      memcpy(clnt->inbuf, &clnt->intmp[n], clnt->nread-n);
+      clnt->nread -= n;
+    } else {
+      clnt->nread = 0;
+    }
     clnt->plen = 0;
     return;
   }
@@ -138,7 +137,7 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
   if (clnt->nread == clnt->inlen) {
     // got all of it
 
-    glme_decoder_make(&dec, clnt->inbuf, clnt->inlen, clnt->inlen);
+    glme_buf_make(&dec, clnt->inbuf, clnt->inlen, clnt->inlen);
     n = glme_decode_data_t(&dec, &data);
     if (n > 0) {
       fprintf(stderr, ".... decoded %d bytes\n", n);
