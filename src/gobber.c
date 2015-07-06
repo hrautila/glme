@@ -11,7 +11,7 @@
 // define __INLINE__ to be empty
 #define __INLINE__
 
-#include "glme/gobber.h"
+#include "gobber.h"
 
 /*
  * Encodes unsigned 64bit integer into the specified buffer.
@@ -283,6 +283,88 @@ int gob_decode_string(char *s, size_t slen, char *buf, size_t buf_size)
     slen = len;
   strncpy(s, &buf[n], slen);
   return nc;
+}
+
+int gob_encode_ulong(char *buf, size_t buf_size, unsigned long v)
+{
+  return gob_encode_uint64(buf, buf_size, (uint64_t)v);
+}
+
+int gob_encode_long(char *buf, size_t buf_size, long v)
+{
+  return gob_encode_int64(buf, buf_size, (int64_t)v);
+}
+
+int gob_encode_uint(char *buf, size_t buf_size, unsigned int v)
+{
+  return gob_encode_uint64(buf, buf_size, (uint64_t)v);
+}
+
+int gob_encode_int(char *buf, size_t buf_size, int v)
+{
+  return gob_encode_int64(buf, buf_size, (int64_t)v);
+}
+
+int gob_encode_bool(char *buf, size_t buf_size, int v)
+{
+  return gob_encode_uint64(buf, buf_size, (int64_t)(v != 0));
+}
+
+int gob_encode_float(char *buf, size_t buf_size, float v)
+{
+  return gob_encode_double(buf, buf_size, (double)v);
+}
+
+int gob_encode_string(char *buf, size_t buf_size, char *s)
+{
+  return gob_encode_bytes(buf, buf_size, s, strlen(s)+1);
+}
+
+
+
+int gob_decode_ulong(unsigned long *v, char *buf, size_t buf_size)
+{
+  int n;
+  uint64_t vv;
+  n = gob_decode_uint64(&vv, buf, buf_size);
+  *v = (unsigned long)vv;
+  return n;
+}
+
+int gob_decode_long(long *v, char *buf, size_t buf_size)
+{
+  int n;
+  int64_t vv;
+  n = gob_decode_int64(&vv, buf, buf_size);
+  *v = (long)vv;
+  return n;
+}
+
+int gob_decode_uint(unsigned int *v, char *buf, size_t buf_size)
+{
+  int n;
+  uint64_t vv;
+  n = gob_decode_uint64(&vv, buf, buf_size);
+  *v = (unsigned int)vv;
+  return n;
+}
+
+int gob_decode_int(int *v, char *buf, size_t buf_size)
+{
+  int n;
+  int64_t vv;
+  n = gob_decode_int64(&vv, buf, buf_size);
+  *v = (int)vv;
+  return n;
+}
+
+int gob_decode_float(float *v, char *buf, size_t buf_size)
+{
+  int n;
+  double vv;
+  n = gob_decode_double(&vv, buf, buf_size);
+  *v = (float)vv;
+  return n;
 }
 
 

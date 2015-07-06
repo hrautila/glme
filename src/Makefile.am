@@ -1,15 +1,14 @@
 
+AM_CFLAGS = -O3 -march=native -fomit-frame-pointer -Iinc 
 
 lib_LTLIBRARIES = libglme.la
 
 libglme_la_SOURCES = \
 	gobber.c \
 	encoder.c \
-	decoder.c \
+        decoder.c \
 	glme.c
 
-nobase_include_HEADERS = \
-	glme/glme.h \
-	glme/gobber.h \
-	glme/encoder.h \
-	glme/decoder.h
+include_HEADERS = \
+	inc/glme.h
+

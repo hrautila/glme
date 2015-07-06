@@ -1,16 +1,364 @@
 
 // Copyright (c) Harri Rautila, 2015
 
+// GLME is Gob Like Message
+
 #ifndef __GLME_H
 #define __GLME_H
 
-#include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
-#include <glme/encoder.h>
-#include <glme/decoder.h>
+#ifndef __INLINE__
+#define __INLINE__ extern inline
+#endif
 
+/**
+ * Gob Like Message encoder structure
+ */
+typedef struct glme_buf_s {
+  char *buf;
+  size_t buflen;	// size of buffer in bytes
+  size_t count;		// number of bytes writen into the buffer (count <= buflen)
+  size_t current;	// current read pointer (current <= count <= buflen)
+  int owner;
+} glme_buf_t;
+
+
+/**
+ * Initialize the specified gbuf with space of len bytes.
+ *
+ * @param gbuf
+ *   The buffer.
+ * @param len
+ *   Requested initial buffer space in bytes.
+ *
+ * @return
+ *   Initialized buffer.
+ */
+glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len);
+
+/**
+ * Make glme_buf from spesified data buffer.
+ *
+ * @param gbuf
+ *   The buffer
+ * @param data
+ *   Data buffer
+ * @param len
+ *   Length of the buffer
+ * @param count
+ *   Length of the encoded content in the data buffer
+ * @return
+ *   Initialized glme_buf.
+ */
+glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count);
+
+/**
+ * Create new glme_buf with buffer space of len bytes.
+ *
+ * @param len
+ *   Requested initial buffer space in bytes.
+ *
+ * @return
+ *   New initialized glme_buf.
+ */
+glme_buf_t *glme_buf_new(size_t len);
+
+/**
+ * Close the glme_buf. Releases allocated buffer and reset read pointers.
+ */
+void glme_buf_close(glme_buf_t *gbuf);
+
+/**
+ * Release the glme_buf.
+ */
+void glme_buf_free(glme_buf_t *gbuf);
+
+/**
+ * Reset glme_buf read pointer.
+ */
+void glme_buf_reset(glme_buf_t *gbuf);
+
+/**
+ * Get glme_buf read pointer.
+ */
+size_t glme_buf_at(glme_buf_t *gbuf);
+
+/**
+ * Pushback read pointer.
+ */
+void glme_buf_pushback(glme_buf_t *gbuf, size_t n);
+
+/**
+ * Clear glme_buf contents.
+ */
+void glme_buf_clear(glme_buf_t *gbuf);
+
+/**
+ * Get content
+ */
+char *glme_buf_data(glme_buf_t *gbuf);
+
+/**
+ * Get encoded content length.
+ */
+size_t glme_buf_len(glme_buf_t *gbuf);
+
+/**
+ * Get size.
+ */
+size_t glme_buf_size(glme_buf_t *gbuf);
+
+/**
+ * Read length prefix message from file descriptor to spesified buffer.
+ *
+ * @return
+ *    total number of bytes read.
+ */
+int glme_buf_readm(glme_buf_t *gbuf, int fd, size_t maxlen);
+
+/**
+ * Write encoded content to file descriptor as length prefix message.
+ */
+int glme_buf_writem(glme_buf_t *gbuf, int fd);
+
+
+/**
+ * Increase size of the glme_buf.
+ *
+ * @param gbuf
+ *   The glme_buf
+ * @parm increase
+ *   Number of bytes to increase the buffer
+ *
+ * Resizing a glme_buf with externally allocated buffer may cause memory leaks
+ * if old buffer is not properly released elsewhere.
+ */
+void glme_buf_resize(glme_buf_t *gbuf, size_t increase);
+
+/**
+ * Disown glme_buf allocated space.
+ */
+void glme_buf_disown(glme_buf_t *gbuf);
+
+/**
+ * Own glme_buf allocated space.
+ */
+void glme_buf_own(glme_buf_t *gbuf);
+
+
+/**
+ * Encode unsigned 64 bit integer into the specified buffer.
+ *
+ * @param gbuf
+ *    Buffer to write data into.
+ * @param v
+ *    Data to encode
+ *
+ * @returns
+ *    Number of bytes writen. If buffer buffer resize fails returns -1 for
+ *    error.
+ */
+int glme_encode_uint64(glme_buf_t *gbuf, uint64_t v);
+
+/**
+ * Encode signed integer into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_int64(glme_buf_t *gbuf, int64_t v);
+
+/**
+ * Encode double precision floating point number into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_double(glme_buf_t *gbuf, double v);
+
+/**
+ * Encode uninterpreted byte stream into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_bytes(glme_buf_t *gbuf, void *s, size_t len);
+
+
+/**
+ * Encode unsigned long into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_ulong(glme_buf_t *gbuf, unsigned long v);
+
+/**
+ * Encode signed long into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_long(glme_buf_t *gbuf, long v);
+
+/**
+ * Encode unsigned int into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_uint(glme_buf_t *gbuf, unsigned int v);
+
+/**
+ * Encode signed int into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_int(glme_buf_t *gbuf, int v);
+
+/**
+ * Encode single precision float into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_float(glme_buf_t *gbuf, float v);
+
+/**
+ * Encode string into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_string(glme_buf_t *gbuf, char *s);
+
+
+/**
+ * Encode array start into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_start_array(glme_buf_t *gbuf, size_t sz);
+
+int glme_encode_end_array(glme_buf_t *gbuf, size_t sz);
+
+
+/**
+ * Encode struct start into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+int glme_encode_start_struct(glme_buf_t *gbuf, int typeid);
+
+
+int glme_encode_end_struct(glme_buf_t *gbuf);
+
+
+/**
+ * Decode unsigned 64 bit integer from the specified decoder.
+ *
+ * @param dec
+ *   Decoder
+ * @param v
+ *   Pointer to value store location.
+ * @return
+ *   Number of bytes read from decoder. Negative value indicates 
+ *   underflow and number of bytes needed to decode value.
+ */
+int glme_decode_uint64(glme_buf_t *dec, uint64_t *v);
+
+
+/**
+ * Decode unsigned 64 bit integer from the specified decoder without
+ * moving internal read pointers.
+ *
+ * @see glme_decode_uint64
+ */
+int glme_decode_uint64_peek(glme_buf_t *dec, uint64_t *v);
+
+/**
+ * Decode signed 64 bit integer from the specified decoder.
+ *
+ * @param dec
+ *   Decoder
+ * @param v
+ *   Pointer to value store location.
+ */
+int glme_decode_int64(glme_buf_t *dec, int64_t *v);
+
+/**
+ * Read signed 64 bit integer from the specified decoder without
+ * moving internal read pointers.
+ *
+ */
+int glme_decode_int64_peek(glme_buf_t *dec, int64_t *v);
+
+
+/**
+ * Decode double precision IEEE floating point number from the specified decoder.
+ *
+ * @param dec
+ *   Decoder
+ * @param v
+ *   Pointer to value store location.
+ */
+int glme_decode_double(glme_buf_t *dec, double *v);
+
+int glme_decode_float(glme_buf_t *dec, float *v);
+
+/**
+ * Decode fixed length bytes stream from the specified decoder.
+ */
+int glme_decode_vec(glme_buf_t *dec, void *s, size_t len);
+
+/**
+ * Decode variable length byte array from the specified decoder.
+ * Allocates space for decoded data.
+ */
+int glme_decode_bytes(glme_buf_t *dec, void **s);
+
+/**
+ * Decode variable length string from the specified decoder.
+ */
+int glme_decode_string(glme_buf_t *dec, char **s);
+
+/**
+ * Decode unsigned long from the specified decoder.
+ *
+ * @see glme_decode_uint64
+ */
+int glme_decode_ulong(glme_buf_t *dec, unsigned long *u);
+
+/**
+ * Decode signed long from the specified decoder.
+ *
+ * @see glme_decode_int64
+ */
+int glme_decode_long(glme_buf_t *dec, long *d);
+
+
+/**
+ * Decode unsigned int from the specified decoder.
+ *
+ * @see glme_decode_uint64
+ */
+int glme_decode_uint(glme_buf_t *dec, unsigned int *u);
+
+/**
+ * Decode signed int from the specified decoder.
+ *
+ * @see glme_decode_int64
+ */
+int glme_decode_int(glme_buf_t *dec, int *d);
+
+/**
+ * Read end of struct marker from the specified decoder.
+ *
+ * @return
+ *   Length of the marker (1 bytes) or negative error code if next
+ *   is not end-of-struct marker.
+ */
+int glme_decode_end_struct(glme_buf_t *dec);
+
+
+
+// ----------------------------------------------------------------------------
+// encode macros
 
 /**
  * Encode function stardard definitions
@@ -543,15 +891,8 @@
       GLME_DECODE(dec, fno, elem, float, 0.0)
 
 
-/**
- * Copy encoder data to decoder.
- *
- * @return
- *   Non zero for error. Zero for success.
- */
-extern int glme_copy_to_decoder(glme_decoder_t *dec, glme_encoder_t *enc);
-  
-#endif // __GLME_H
+#endif
+
 
 // Local Variables:
 // indent-tabs-mode: nil

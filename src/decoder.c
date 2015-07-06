@@ -1,79 +1,16 @@
 
-// Copyrigth (c) Harri Rautila, 2015
+// Copyright (c) Harri Rautila, 2015
 
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 
-#include "glme/gobber.h"
-
-#ifdef __INLINE__
-#undef __INLINE__
-#endif
-#define __INLINE__
-
-#include "glme/decoder.h"
-
-/**
- * Read message from the given file descriptor.
- *
- * @param dec
- *    Decoder
- * @param fd
- *    Open file descriptor
- *
- * @returns
- *    Number of bytes read from the file descriptor.
- */
-int glme_decoder_readm(glme_decoder_t *dec, int fd)
-{
-  int n, nc, rc = 0, dc;
-
-  dc = dec->count;
- retry:
-  if (dec->buflen - dec->count < 9) {  // 9 is max length of encoded int
-    if (rc > 1)
-      return -1;
-    glme_decoder_resize(dec, dec->buflen < 1024 ? dec->buflen + 9 : 1024);
-    rc++;
-    goto retry;
-  }
-  
-  // read one byte
-  if ((n = read(fd, &dec->buf[dc], 1)) < 0)
-    return -1;
-
- reread:
-  nc = 0;
-  dec->count += n;
-  n = gob_decode_uint(&nc, &dec->buf[dc], dec->count - dc);
-  if (n > dec->count - dc) {
-    // underflow; read more 
-    //printf("..readm: read %ld bytes more\n", n - (dec->count - dc));
-    n = read(fd, &dec->buf[dec->count], n - (dec->count - dc));
-    if (n < 0)
-      return -1;
-    goto reread;
-  } 
-
-  // here have message length in nc; read it in
-  rc = 0;
-  while (nc > dec->buflen - dec->count ) {
-    if (rc > 1)
-      return -1;
-    // need more space; resize
-    glme_decoder_resize(dec, nc - (dec->buflen - dec->count));
-    rc++;
-  }
-
-  n = read(fd, &dec->buf[dec->count], nc);
-  dec->count += n;
-  return dec->count - dc;
-}
+#include "gobber.h"
+#include "glme.h"
 
 
-int glme_decode_uint64(glme_decoder_t *dec, uint64_t *v)
+int glme_decode_uint64(glme_buf_t *dec, uint64_t *v)
 {
   int n;
 
@@ -86,7 +23,7 @@ int glme_decode_uint64(glme_decoder_t *dec, uint64_t *v)
   return n;
 }
 
-int glme_decode_uint64_peek(glme_decoder_t *dec, uint64_t *v)
+int glme_decode_uint64_peek(glme_buf_t *dec, uint64_t *v)
 {
   int n;
 
@@ -98,7 +35,7 @@ int glme_decode_uint64_peek(glme_decoder_t *dec, uint64_t *v)
   return n;
 }
 
-int glme_decode_int64(glme_decoder_t *dec, int64_t *v)
+int glme_decode_int64(glme_buf_t *dec, int64_t *v)
 {
   int n;
   n = gob_decode_int64(v, &dec->buf[dec->current], dec->count-dec->current); 
@@ -110,7 +47,7 @@ int glme_decode_int64(glme_decoder_t *dec, int64_t *v)
   return n;
 }
 
-int glme_decode_int64_peek(glme_decoder_t *dec, int64_t *v)
+int glme_decode_int64_peek(glme_buf_t *dec, int64_t *v)
 {
   int n;
   n = gob_decode_int64(v, &dec->buf[dec->current], dec->count-dec->current); 
@@ -121,7 +58,43 @@ int glme_decode_int64_peek(glme_decoder_t *dec, int64_t *v)
   return n;
 }
 
-int glme_decode_double(glme_decoder_t *dec, double *v)
+int glme_decode_ulong(glme_buf_t *dec, unsigned long *u)
+{
+  int n;
+  uint64_t u64;
+  n = glme_decode_uint64(dec, &u64);
+  *u = n < 0 ? 0 : (unsigned long)u64;
+  return n;
+}
+
+int glme_decode_long(glme_buf_t *dec, long *d)
+{
+  int n;
+  int64_t i64;
+  n = glme_decode_int64(dec, &i64);
+  *d = n < 0 ? 0 : (long)i64;
+  return n;
+}
+
+int glme_decode_uint(glme_buf_t *dec, unsigned int *u)
+{
+  int n;
+  uint64_t u64;
+  n = glme_decode_uint64(dec, &u64);
+  *u = n < 0 ? 0 : (unsigned int)u64;
+  return n;
+}
+
+int glme_decode_int(glme_buf_t *dec, int *d)
+{
+  int n;
+  int64_t i64;
+  n = glme_decode_int64(dec, &i64);
+  *d = n < 0 ? 0 : (int)i64;
+  return n;
+}
+
+int glme_decode_double(glme_buf_t *dec, double *v)
 {
   int n;
   n = gob_decode_double(v, &dec->buf[dec->current], dec->count-dec->current); 
@@ -133,7 +106,16 @@ int glme_decode_double(glme_decoder_t *dec, double *v)
   return n;
 }
 
-int glme_decode_vec(glme_decoder_t *dec, void *s, size_t len)
+int glme_decode_float(glme_buf_t *dec, float *v)
+{
+  int n;
+  double dv;
+  n = glme_decode_double(dec, &dv);
+  *v = n < 0 ? 0.0 : (float)dv;
+  return n;
+}
+
+int glme_decode_vec(glme_buf_t *dec, void *s, size_t len)
 {
   int n;
   int64_t dlen = 0;
@@ -153,7 +135,7 @@ int glme_decode_vec(glme_decoder_t *dec, void *s, size_t len)
   return n + dlen;
 }
 
-int glme_decode_bytes(glme_decoder_t *dec, void **s)
+int glme_decode_bytes(glme_buf_t *dec, void **s)
 {
   int n;
   int64_t dlen = 0;
@@ -176,12 +158,12 @@ int glme_decode_bytes(glme_decoder_t *dec, void **s)
   return n + dlen;
 }
 
-int glme_decode_string(glme_decoder_t *dec, char **s)
+int glme_decode_string(glme_buf_t *dec, char **s)
 {
   return glme_decode_bytes(dec, (void **)s);
 }
 
-int glme_decode_end_struct(glme_decoder_t *dec)
+int glme_decode_end_struct(glme_buf_t *dec)
 {
   int n;
   uint64_t endm;
