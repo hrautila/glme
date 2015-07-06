@@ -73,7 +73,7 @@ uv_buf_t alloc_buffer(uv_handle_t *handle, size_t ssize)
       clnt->inalloc = 1;
       return uv_buf_init(clnt->intmp, clnt->inalloc);
     }
-    clnt->inalloc = clnt->plen; //sizeof(clnt->intmp);
+    clnt->inalloc = clnt->plen;
     return uv_buf_init(&clnt->intmp[1], clnt->inalloc-1);
   }
 
@@ -121,13 +121,7 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
 
     clnt->state = 1;
     clnt->inbuf = malloc(clnt->inlen);
-    // if part of message in tmpbuf, copy it to the start inbuf
-    if (n < clnt->nread) {
-      memcpy(clnt->inbuf, &clnt->intmp[n], clnt->nread-n);
-      clnt->nread -= n;
-    } else {
-      clnt->nread = 0;
-    }
+    clnt->nread = 0;
     clnt->plen = 0;
     return;
   }
