@@ -1,7 +1,7 @@
 
 AUTOMAKE_OPTIONS = subdir-objects
 
-AM_CFLAGS = -I../ -I ../src 
+AM_CFLAGS = -I../ -I ../src  -I../src/inc
 LDADD = ../src/libglme.la
 
 PROGS = \

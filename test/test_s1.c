@@ -3,11 +3,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "glme/glme.h"
+#include "glme.h"
 
 #define MSG_LIST_ID 32
 #define MSG_LINK_ID 33
 
+#define MMAX (1 << 24)
 
 typedef struct link {
   int val;
@@ -15,7 +16,7 @@ typedef struct link {
 } link_t;
 
 
-int glme_encode_link_t(glme_encoder_t *enc, link_t *rc)
+int glme_encode_link_t(glme_buf_t *enc, link_t *rc)
 {
   GLME_ENCODE_STDDEF;
   GLME_ENCODE_TYPE(enc, MSG_LINK_ID);
@@ -25,7 +26,7 @@ int glme_encode_link_t(glme_encoder_t *enc, link_t *rc)
   GLME_ENCODE_END;
 }
 
-int glme_decode_link_t(glme_decoder_t *dec, link_t *rc)
+int glme_decode_link_t(glme_buf_t *dec, link_t *rc)
 {
   GLME_DECODE_STDDEF;
   GLME_DECODE_TYPE(dec, MSG_LINK_ID);
@@ -54,7 +55,7 @@ int listcmp(list_t *a, list_t *b)
   return 0;
 }
 
-int glme_encode_list_t(glme_encoder_t *enc, list_t *lst)
+int glme_encode_list_t(glme_buf_t *enc, list_t *lst)
 {
   GLME_ENCODE_STDDEF;
   GLME_ENCODE_TYPE(enc, MSG_LIST_ID);
@@ -64,7 +65,7 @@ int glme_encode_list_t(glme_encoder_t *enc, list_t *lst)
 }
 
 
-int glme_decode_list_t(glme_decoder_t *dec, list_t *lst)
+int glme_decode_list_t(glme_buf_t *dec, list_t *lst)
 {
   GLME_DECODE_STDDEF;
   GLME_DECODE_TYPE(dec, MSG_LIST_ID);
@@ -84,8 +85,8 @@ void printlist(list_t *t)
 
 int main(int argc, char **argv)
 {
-  glme_encoder_t encoder;
-  glme_decoder_t decoder;
+  glme_buf_t encoder;
+  glme_buf_t decoder;
   int k, n, doencode = 1;
   int pipefd[2];
   pid_t cpid;
@@ -96,8 +97,8 @@ int main(int argc, char **argv)
 
   memset(&snd, 0, sizeof(snd));
   memset(&rcv, 0, sizeof(rcv));
-  glme_encoder_init(&encoder, 1024);
-  glme_decoder_init(&decoder, 1024);
+  glme_buf_init(&encoder, 1024);
+  glme_buf_init(&decoder, 1024);
 
 
   // create list;
@@ -111,7 +112,7 @@ int main(int argc, char **argv)
   //dataprint(&msg);
   if (argc > 2) {
     glme_encode_list_t(&encoder, &snd);
-    glme_encoder_writem(&encoder, 1);
+    glme_buf_writem(&encoder, 1);
     exit(0);
   }
 
@@ -130,16 +131,14 @@ int main(int argc, char **argv)
     close(pipefd[0]);
 
     glme_encode_list_t(&encoder, &snd);
-    glme_encoder_writem(&encoder, pipefd[1]);
+    glme_buf_writem(&encoder, pipefd[1]);
     close(pipefd[1]);
     exit(0);
   } else {
     // decoder in master
     close(pipefd[1]);
 
-    n = glme_decoder_readm(&decoder, pipefd[0]);
-    // decode buffer starts with message length
-    n = glme_decode_uint64(&decoder, &rlen);
+    n = glme_buf_readm(&decoder, pipefd[0], MMAX);
     n = glme_decode_list_t(&decoder, &rcv);
     if (n < 0) {
       fprintf(stderr, "decode_error... %d\n", n);
@@ -149,7 +148,7 @@ int main(int argc, char **argv)
   }
   n = listcmp(&snd, &rcv);
   fprintf(stderr, "decoded == encoded: %s [encoded length %ld/%ld bytes]\n",
-	  n == 0 ? "YES" : "NO", rlen, nbytes);
+	  n == 0 ? "YES" : "NO", glme_buf_len(&decoder), nbytes);
   printlist(&rcv);
   exit(n);
 }

@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "glme/glme.h"
+#include "glme.h"
+
+#define MMAX (1 << 24)
 
 typedef struct data_t {
   double *vec;
@@ -38,7 +40,7 @@ void dataprint(data_t *a)
 
 #define MSG_DATA_ID 32
 
-int glme_encode_data_t(glme_encoder_t *enc, data_t *msg, int typeid)
+int glme_encode_data_t(glme_buf_t *enc, data_t *msg, int typeid)
 {
   GLME_ENCODE_STDDEF;
   GLME_ENCODE_TYPE(enc, typeid);
@@ -48,7 +50,7 @@ int glme_encode_data_t(glme_encoder_t *enc, data_t *msg, int typeid)
 }
 
 
-int glme_decode_data_t(glme_decoder_t *dec, data_t *msg, int typeid)
+int glme_decode_data_t(glme_buf_t *dec, data_t *msg, int typeid)
 {
   GLME_DECODE_STDDEF;
   GLME_DECODE_TYPE(dec, typeid);
@@ -61,8 +63,8 @@ int glme_decode_data_t(glme_decoder_t *dec, data_t *msg, int typeid)
 int main(int argc, char **argv)
 {
   data_t msg, rcv;
-  glme_encoder_t encoder;
-  glme_decoder_t decoder;
+  glme_buf_t encoder;
+  glme_buf_t decoder;
   int k, n, doencode = 1;
   int pipefd[2];
   pid_t cpid;
@@ -72,8 +74,8 @@ int main(int argc, char **argv)
 
   memset(&msg, 0, sizeof(msg));
   memset(&rcv, 0, sizeof(rcv));
-  glme_encoder_init(&encoder, 1024);
-  glme_decoder_init(&decoder, 1024);
+  glme_buf_init(&encoder, 1024);
+  glme_buf_init(&decoder, 1024);
 
   if (argc > 1) {
     vlen = strtol(argv[1], (char **)0, 10);
@@ -94,7 +96,7 @@ int main(int argc, char **argv)
   //dataprint(&msg);
   if (argc > 3) {
     glme_encode_data_t(&encoder, &msg, MSG_DATA_ID);
-    glme_encoder_writem(&encoder, 1);
+    glme_buf_writem(&encoder, 1);
     exit(0);
   }
 
@@ -113,16 +115,14 @@ int main(int argc, char **argv)
     close(pipefd[0]);
 
     glme_encode_data_t(&encoder, &msg, MSG_DATA_ID);
-    glme_encoder_writem(&encoder, pipefd[1]);
+    glme_buf_writem(&encoder, pipefd[1]);
     close(pipefd[1]);
     exit(0);
   } else {
     // decoder in master
     close(pipefd[1]);
 
-    n = glme_decoder_readm(&decoder, pipefd[0]);
-    // decode buffer starts with message length
-    n = glme_decode_uint64(&decoder, &rlen);
+    n = glme_buf_readm(&decoder, pipefd[0], MMAX);
     n = glme_decode_data_t(&decoder, &rcv, MSG_DATA_ID);
     if (n < 0) {
       fprintf(stderr, "decode_error... %d\n", n);
@@ -132,7 +132,7 @@ int main(int argc, char **argv)
   }
   n = datacmp(&msg, &rcv);
   fprintf(stderr, "decoded == encoded: %s [encoded length %ld/%ld bytes]\n",
-	  n == 0 ? "YES" : "NO", rlen, nbytes);
+	  n == 0 ? "YES" : "NO", glme_buf_len(&decoder), nbytes);
   exit(n);
 
 }
