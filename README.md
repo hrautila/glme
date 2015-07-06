@@ -50,10 +50,10 @@ The decoder function returns number of bytes read from the specified decoder obj
 error code indicates error.
 
 ```c
-   #include <glme/glme.h>
+   #include <glme.h>
 
    // message encoding function
-   int msg_encoder(glme_encoder_t *enc, msg_t *m)
+   int msg_encoder(glme_buf_t *enc, msg_t *m)
    {
      GLME_ENCODE_STDDEF;
      GLME_ENCODE_TYPE(enc, MSG_ID);
@@ -66,7 +66,7 @@ error code indicates error.
      GLME_ENCODE_END;
    }
 
-   int msg_decoder(glme_decoder_t *dec, msg_t *m)
+   int msg_decoder(glme_buf_t *dec, msg_t *m)
    {
      GLME_DECODE_STDDEF;
      GLME_DECODE_TYPE(dec, MSG_ID);
@@ -86,13 +86,13 @@ error code indicates error.
 Initialize encoder, construct data to send, encode it and write out to open file descriptor.
 
 ```c
-   #include <glme/glme.h>
+   #include <glme.h>
    int main(int argc, char **argv)
    {
       msg_t msg;
-      glme_encoder_t encoder;
+      glme_buf_t encoder;
 
-      glme_encoder_init(&encoder, 1024);
+      glme_buf_init(&encoder, 1024);
 
       msg.ui = 0xFF; msg.i = -777; msg.r = 17.0;
       strncpy(msg.vec, "hello", sizeof(msg.vec));
@@ -100,7 +100,7 @@ Initialize encoder, construct data to send, encode it and write out to open file
       
       msg_encode(&encoder, &msg);
       // write message to stdout
-      glme_encoder_writem(&encoder, 1);
+      glme_buf_writem(&encoder, 1);
    }
 ```
 
@@ -109,19 +109,19 @@ Initialize encoder, construct data to send, encode it and write out to open file
 Initialize decoder, read the data, decode and use.
 
 ```c
-   #include <glme/glme.h>
+   #include <glme.h>
+   #define MMAX (1<<24)
+
    int main(int argc, char **argv)
    {
       msg_t msg;
-      glme_decoder_t decoder;
+      glme_buf_t decoder;
 
-      glme_decoder_init(&decoder, 1024);
+      glme_buf_init(&decoder, 1024);
       
       // read the message; 
-      glme_decoder_readm(&decoder, 0);
-      // extract the length
-      glme_decode_uint(&decoder, &mlen);
-      // and the message
+      glme_buf_readm(&decoder, 0, MMAX);
+      // decode the message
       msg_decode(&decoder, &msg);
    }
 ```
@@ -146,7 +146,7 @@ Initialize decoder, read the data, decode and use.
 Encoder functions for both types
 
 ```c
-   int encode_link_t(glme_encoder *enc, link_t *ln)
+   int encode_link_t(glme_buf_t *enc, link_t *ln)
    {
      GLME_ENCODE_STDDEF;
      GLME_ENCODE_TYPE(enc, LINK_ID);
@@ -156,7 +156,7 @@ Encoder functions for both types
      GLME_ENCODE_END;
    }
 
-   int encode_list_t(glme_encoder *enc, list_t *lst)
+   int encode_list_t(glme_buf_t *enc, list_t *lst)
    {
      GLME_ENCODE_STDDEF;
      GLME_ENCODE_TYPE(enc, LIST_ID);
@@ -170,7 +170,7 @@ Encoder functions for both types
 Decoder functions for both types
 
 ```c
-   int decode_link_t(glme_decoder *dec, link_t *ln)
+   int decode_link_t(glme_buf_t *dec, link_t *ln)
    {
      GLME_DECODE_STDDEF;
      GLME_DECODE_TYPE(dec, LINK_ID);
@@ -180,7 +180,7 @@ Decoder functions for both types
      GLME_DECODE_END;
    }
 
-   int decode_list_t(glme_decoder *dec, list_t *lst)
+   int decode_list_t(glme_buf_t *dec, list_t *lst)
    {
      GLME_DECODE_STDDEF;
      GLME_DECODE_TYPE(dec, LIST_ID);
