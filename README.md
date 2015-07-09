@@ -63,7 +63,7 @@ error code indicates error.
      GLME_ENCODE_DOUBLE(enc, 2, m->r);
      GLME_ENCODE_VEC(enc, 3, m->vec, sizeof(m->vec));
      GLME_ENCODE_STR(enc, 4, m->ptr);
-     GLME_ENCODE_END;
+     GLME_ENCODE_END(enc);
    }
 
    int msg_decoder(glme_buf_t *dec, msg_t *m)
@@ -76,7 +76,7 @@ error code indicates error.
      GLME_DECODE_DOUBLE(dec, 2, &m->r);
      GLME_DECODE_VEC(dec, 3, m->vec, sizeof(m->vec));
      GLME_DECODE_STR(dec, 4, &m->ptr);
-     GLME_DECODE_END;
+     GLME_DECODE_END(dec);
    }
 
 ```
@@ -153,7 +153,7 @@ Encoder functions for both types
      GLME_ENCODE_DELTA(enc);
      GLME_ENCODE_INT(enc, 0, ln->value);
      GLME_ENCODE_STRUCT_PTR(enc, 1, ln->next, encode_link_t);
-     GLME_ENCODE_END;
+     GLME_ENCODE_END(enc);
    }
 
    int encode_list_t(glme_buf_t *enc, list_t *lst)
@@ -162,7 +162,7 @@ Encoder functions for both types
      GLME_ENCODE_TYPE(enc, LIST_ID);
      GLME_ENCODE_DELTA(enc);
      GLME_ENCODE_STRUCT_PTR(enc, 0, lst->head, encode_link_t);
-     GLME_ENCODE_END;
+     GLME_ENCODE_END(enc);
    }
 ```
 
@@ -177,7 +177,7 @@ Decoder functions for both types
      GLME_DECODE_DELTA(dec);
      GLME_DECODE_INT(dec, 0, &ln->value);
      GLME_DECODE_STRUCT_PTR(dec, 1, ln->next, decode_link_t, link_t);
-     GLME_DECODE_END;
+     GLME_DECODE_END(dec);
    }
 
    int decode_list_t(glme_buf_t *dec, list_t *lst)
@@ -186,7 +186,7 @@ Decoder functions for both types
      GLME_DECODE_TYPE(dec, LIST_ID);
      GLME_DECODE_DELTA(dec);
      GLME_DECODE_STRUCT_PTR(dec, 0, lst->head, decode_link_t, link_t);
-     GLME_DECODE_END;
+     GLME_DECODE_END(dec);
    }
 ```
 
