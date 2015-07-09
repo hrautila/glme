@@ -40,7 +40,7 @@ int glme_encode_rect_t(glme_buf_t *enc, rect_t *rc)
   GLME_ENCODE_INT64(enc, 1, rc->x1);
   GLME_ENCODE_INT64(enc, 2, rc->y0);
   GLME_ENCODE_INT64(enc, 3, rc->y1);
-  GLME_ENCODE_END;
+  GLME_ENCODE_END(enc);
 }
 
 int glme_decode_rect_t(glme_buf_t *dec, rect_t *rc)
@@ -52,7 +52,7 @@ int glme_decode_rect_t(glme_buf_t *dec, rect_t *rc)
   GLME_DECODE_INT64(dec, 1, &rc->x1);
   GLME_DECODE_INT64(dec, 2, &rc->y0);
   GLME_DECODE_INT64(dec, 3, &rc->y1);
-  GLME_DECODE_END;
+  GLME_DECODE_END(dec);
 }
 
 
@@ -80,7 +80,7 @@ int glme_encode_data_t(glme_buf_t *enc, data_t *msg)
   GLME_ENCODE_DOUBLE(enc, 0, msg->r);
   GLME_ENCODE_STRUCT(enc, 1, &msg->shape, glme_encode_rect_t);
   GLME_ENCODE_UINT64(enc, 2, msg->a);
-  GLME_ENCODE_END;
+  GLME_ENCODE_END(enc);
 }
 
 
@@ -92,7 +92,7 @@ int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
   GLME_DECODE_DOUBLE(dec, 0, &msg->r);
   GLME_DECODE_STRUCT(dec, 1, &msg->shape, glme_decode_rect_t);
   GLME_DECODE_UINT64(dec, 2, &msg->a);
-  GLME_DECODE_END;
+  GLME_DECODE_END(dec);
 }
 
 void printdata(data_t *t)

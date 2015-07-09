@@ -33,7 +33,7 @@ int glme_encode_data_t(glme_buf_t *enc, data_t *msg)
   GLME_ENCODE_TYPE(enc, MSG_DATA_ID);
   GLME_ENCODE_DELTA(enc);
   GLME_ENCODE_ARRAY(enc, 0, msg->vec, msg->vlen, long);
-  GLME_ENCODE_END;
+  GLME_ENCODE_END(enc);
 }
 
 
@@ -42,8 +42,8 @@ int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
   GLME_DECODE_STDDEF;
   GLME_DECODE_TYPE(dec, MSG_DATA_ID);
   GLME_DECODE_DELTA(dec);
-  GLME_DECODE_VAR_ARRAY(dec, 0, msg->vec, msg->vlen, long);
-  GLME_DECODE_END;
+  GLME_DECODE_VAR_ARRAY(dec, 0, msg->vec, msg->vlen, long, long);
+  GLME_DECODE_END(dec);
 }
 
 static inline

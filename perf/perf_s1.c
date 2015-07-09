@@ -24,7 +24,7 @@ int glme_encode_link_t(glme_buf_t *enc, link_t *rc)
   GLME_ENCODE_DELTA(enc);
   GLME_ENCODE_INT(enc, 0, rc->val);
   GLME_ENCODE_STRUCT_PTR(enc, 1, rc->next, glme_encode_link_t);
-  GLME_ENCODE_END;
+  GLME_ENCODE_END(enc);
 }
 
 int glme_decode_link_t(glme_buf_t *dec, link_t *rc)
@@ -34,7 +34,7 @@ int glme_decode_link_t(glme_buf_t *dec, link_t *rc)
   GLME_DECODE_DELTA(dec);
   GLME_DECODE_INT(dec, 0, &rc->val);
   GLME_DECODE_STRUCT_PTR(dec, 1, rc->next, glme_decode_link_t, link_t);
-  GLME_DECODE_END;
+  GLME_DECODE_END(dec);
 }
 
 
@@ -62,7 +62,7 @@ int glme_encode_list_t(glme_buf_t *enc, list_t *lst)
   GLME_ENCODE_TYPE(enc, MSG_LIST_ID);
   GLME_ENCODE_DELTA(enc);
   GLME_ENCODE_STRUCT_PTR(enc, 0, lst->head, glme_encode_link_t);
-  GLME_ENCODE_END;
+  GLME_ENCODE_END(enc);
 }
 
 
@@ -72,7 +72,7 @@ int glme_decode_list_t(glme_buf_t *dec, list_t *lst)
   GLME_DECODE_TYPE(dec, MSG_LIST_ID);
   GLME_DECODE_DELTA(dec);
   GLME_DECODE_STRUCT_PTR(dec, 0, lst->head, glme_decode_link_t, link_t);
-  GLME_DECODE_END;
+  GLME_DECODE_END(dec);
 }
 
 static inline
