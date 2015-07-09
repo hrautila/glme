@@ -369,7 +369,7 @@ int glme_decode_end_struct(glme_buf_t *dec);
 /**
  * Encode function stardard ending
  */
-#define GLME_ENCODE_END				\
+#define GLME_ENCODE_END(enc)                    \
   __n = glme_encode_end_struct(enc);		\
   if (__n < 0) return -4;                       \
   __nc += __n;					\
@@ -464,8 +464,17 @@ int glme_decode_end_struct(glme_buf_t *dec);
 
 /**
  * Encode fixed length array
+ *
+ * @param enc   Encode
+ * @param fno   Field number
+ * @param vec   Array
+ * @param len   Array length
+ * @param gname Basic GLME encoder name.
+ *
+ * Parameter gname is used to construct name of the GLME encoder
+ * function of form 'glme_encode_<gname>'.
  */
-#define GLME_ENCODE_ARRAY(enc, fno, vec, len, typename)	\
+#define GLME_ENCODE_ARRAY(enc, fno, vec, len, gname)	\
   do {							\
     if ( (len) != 0 ) {					\
       int __k;						\
@@ -476,7 +485,39 @@ int glme_decode_end_struct(glme_buf_t *dec);
       if (__n < 0) return -(fno+10);                    \
       __nc += __n;                                      \
       for (__k = 0; __k < (len); __k++) {               \
-	__n = glme_encode_ ## typename (enc, vec[__k]);	\
+	__n = glme_encode_ ## gname (enc, vec[__k]);	\
+        if (__n < 0) return -(fno+10);                  \
+        __nc += __n;					\
+      }							\
+      __delta = 1;					\
+    } else {						\
+      __delta += 1;					\
+    }							\
+  } while (0)
+
+/**
+ * Encode variable size array of arbitrary type.
+ *
+ * @param enc   Encoder
+ * @param fno   Field number
+ * @param vec   Pointer to array
+ * @param len   Number of elements
+ * @param func  Encoder function name
+ *
+ * Parameter func must declared as int (*func)(glme_buf_t *, <element type> *).
+ */
+#define GLME_ENCODE_ANY_ARRAY(enc, fno, vec, len, func)	\
+  do {							\
+    if ( (len) != 0 ) {					\
+      int __k;						\
+      __n = glme_encode_uint64(enc, __delta);		\
+      if (__n < 0) return -(fno+10);                    \
+      __nc += __n;                                      \
+      __n = glme_encode_uint64(enc, len);               \
+      if (__n < 0) return -(fno+10);                    \
+      __nc += __n;                                      \
+      for (__k = 0; __k < (len); __k++) {               \
+	__n = (*func)(enc, &vec[__k]);                  \
         if (__n < 0) return -(fno+10);                  \
         __nc += __n;					\
       }							\
@@ -489,7 +530,9 @@ int glme_decode_end_struct(glme_buf_t *dec);
 /**
  * Encode start of array; encode current delta and array length
  *
- * Code for encoding actual elements must follow this definition.
+ * Code for encoding actual elements must follow this definition. If length is
+ * zero then array is omitted from the encoded stream and code between START_ARRAY
+ * and END_ARRAY macros is not executed.
  */
 #define GLME_ENCODE_START_ARRAY(enc, fno, len)  \
   do {                                          \
@@ -619,7 +662,7 @@ int glme_decode_end_struct(glme_buf_t *dec);
 /**
  * Decode function stardard ending
  */
-#define GLME_DECODE_END				\
+#define GLME_DECODE_END(enc)                    \
     if (__delta != 0) return -4;                \
     return __nc
 
@@ -726,7 +769,19 @@ int glme_decode_end_struct(glme_buf_t *dec);
 
 
 
-#define GLME_DECODE_ARRAY(dec, fno, vec, len, typename)         \
+/**
+ * Expand code to decode fixed size array.
+ *
+ * @param dec     Decoder
+ * @param fno     Field number
+ * @param vec     Array pointer
+ * @param len     Fixed array length
+ * @param gname   Basic GLME decoder type
+ *
+ * Parameter gname is used to generate decoder function name in the
+ * form 'glme_decode_<gname>'.
+ */
+#define GLME_DECODE_ARRAY(dec, fno, vec, len, gname)         \
     do {                                                        \
       if (__delta == 1) {                                       \
         int __k;                                                \
@@ -735,7 +790,7 @@ int glme_decode_end_struct(glme_buf_t *dec);
         if (__n < 0) return -(fno+10);                          \
         __nc += __n;                                            \
         for (__k = 0; __k < len; __k++) {                       \
-          __n = glme_decode_ ## typename(dec, &(vec)[__k]);     \
+          __n = glme_decode_ ## gname(dec, &(vec)[__k]);        \
           if (__n < 0) return -(fno+10);                        \
           __nc += __n;                                          \
         }                                                       \
@@ -750,32 +805,31 @@ int glme_decode_end_struct(glme_buf_t *dec);
 
 
 /**
- * Expand code to deocode variable size array.
+ * Expand code to decode variable size array.
  *
- * @param dec
- *   Decoder
- * @param fno
- *   Field number
- * @param vec
- *   Array pointer
- * @param
- *   Variable to receive array length
- * @param typename
- *   Element typename (known GLME basic decoders)
+ * @param dec     Decoder
+ * @param fno     Field number
+ * @param vec     Array pointer
+ * @param len     Variable to receive array length
+ * @param gname   Basic GLME decoder type
+ * @param ctype   C type
+ *
+ * Parameter gname is used to generate decoder function name in the
+ * form 'glme_decode_<gname>'.
  */
-#define GLME_DECODE_VAR_ARRAY(dec, fno, vec, len, typename)     \
+#define GLME_DECODE_VAR_ARRAY(dec, fno, vec, len, gname, ctype)       \
     do {                                                        \
       if (__delta == 1) {                                       \
         int __k;                                                \
         uint64_t __alen;                                        \
-        typename *__vptr;                                       \
+        ctype *__vptr;                                          \
         __n = glme_decode_uint64(dec, &__alen);                 \
         if (__n < 0) return -(fno+10);                          \
         __nc += __n;                                            \
-        __vptr = (typename *)malloc(__alen*sizeof(*(vec)));     \
+        __vptr = (ctype *)malloc(__alen*sizeof(ctype));         \
         if (! __vptr) return -(fno+10);                         \
         for (__k = 0; __k < __alen; __k++) {                    \
-          __n = glme_decode_ ## typename(dec, &__vptr[__k]);    \
+          __n = glme_decode_ ## gname(dec, &__vptr[__k]);       \
           if (__n < 0) {free(__vptr); return -(fno+10);}        \
           __nc += __n;                                          \
         }                                                       \
@@ -785,7 +839,8 @@ int glme_decode_end_struct(glme_buf_t *dec);
         len = __alen;                                           \
 	__nc += __n;				                \
       } else {                                                  \
-        memset((vec), 0, (len)*sizeof(typename));               \
+        len = 0;                                                \
+        vec = (ctype *)0;                                       \
         if (__delta > 0) __delta -= 1;                          \
       }                                                         \
     } while (0)
@@ -793,6 +848,13 @@ int glme_decode_end_struct(glme_buf_t *dec);
 
 /**
  * Decode embedded struct
+ *
+ * @param dec   Decoder
+ * @param fno   Field number
+ * @param elem  Pointer to struct element
+ * @param func  Decoder function
+ *
+ * Decoder function is of type int (*func)(glme_buf_t *, struct <x> *);
  */
 #define GLME_DECODE_STRUCT(dec, fno, elem, func)	\
    do {                                                 \
@@ -812,16 +874,13 @@ int glme_decode_end_struct(glme_buf_t *dec);
 /**
  * Decode struct pointer;
  *
- * @param dec
- *   Decoder
- * @param fno
- *   Field number
- * @param elem
- *   Field element
- * @param func
- *   Decoder function for struct type;
- * @param stype
- *   C type name for structure type
+ * @param dec   Decoder
+ * @param fno   Field number
+ * @param elem  Pointer to struct element
+ * @param func  Decoder function for struct type;
+ * @param stype C type name for structure type
+ *
+ * Decoder function is of type int (*func)(glme_buf_t *, stype *);
  */
 #define GLME_DECODE_STRUCT_PTR(dec, fno, elem, func, stype)	\
       do {                                                      \
@@ -841,6 +900,83 @@ int glme_decode_end_struct(glme_buf_t *dec);
           }                                                     \
       } while (0)
 
+/**
+ * Expand code to decode variable size arbitrary type array.
+ *
+ * @param dec       Decoder
+ * @param fno       Field number
+ * @param vec       Pointer to structure array
+ * @param len       Variable to receive array length
+ * @param func      Element decoder function
+ * @param stype     Element C type
+ *
+ * Decoder function is of type int (*func)(glme_buf_t *, stype *);
+ */
+#define GLME_DECODE_ANY_ARRAY(dec, fno, vec, len, func, ctype)  \
+    do {                                                        \
+      if (__delta == 1) {                                       \
+        int __k;                                                \
+        uint64_t __alen;                                        \
+        ctype *__vptr;                                          \
+        __n = glme_decode_uint64(dec, &__alen);                 \
+        if (__n < 0) return -(fno+10);                          \
+        __nc += __n;                                            \
+        __vptr = (ctype *)malloc(__alen*sizeof(ctype));         \
+        if (! __vptr) return -(fno+10);                         \
+        for (__k = 0; __k < __alen; __k++) {                    \
+          __n = (*func)(dec, &__vptr[__k]);                     \
+          if (__n < 0) {free(__vptr); return -(fno+10);}        \
+          __nc += __n;                                          \
+        }                                                       \
+	__n = glme_decode_uint64(dec, &__delta);                \
+	if (__n < 0) {free(__vptr); return -(fno+10);}          \
+        vec = __vptr;                                           \
+        len = __alen;                                           \
+	__nc += __n;				                \
+      } else {                                                  \
+        len = 0;                                                \
+        vec = (ctype *)0;                                       \
+        if (__delta > 0) __delta -= 1;                          \
+      }                                                         \
+    } while (0)
+
+
+/**
+ * Decode start of array from stream.
+ *
+ * Parameter len set to array length if array encoded in the stream.
+ * If array is omitted from the stream then code between START_ARRAY 
+ * and END_ARRAY macros is not executed.
+ */
+#define GLME_DECODE_START_ARRAY(dec, fno, len)                  \
+        do {                                                    \
+          uint64_t __alen;                                      \
+          __skip_array = 0;                                     \
+          if ( __delta != 1 ) {                                 \
+            __skip_array = 1;                                   \
+            goto __end_array_ ## fno;                           \
+          }                                                     \
+          __n = glme_decode_uint64(dec, &__alen);               \
+          if (__n < 0) return -(fno+10);                        \
+          __nc += __n;                                          \
+          len = __alen;                                         \
+        } while (0)
+
+/**
+ * Insert END_ARRAY handling code for matching START_ARRAY macro.
+ */
+#define GLME_DECODE_END_ARRAY(dec, fno)                       \
+      do {                                                      \
+      __n = glme_decode_uint64(dec, &__delta);                  \
+      if (__n < 0) {return -(fno+10);}                          \
+      __nc += __n;                                              \
+      __end_array_ ## fno:                                      \
+      if ( __skip_array == 1 ) {                                \
+        if (__delta > 0) __delta -= 1;                          \
+      }                                                         \
+      } while (0)
+      
+  
 /**
  * Decode unsigned 64 bit integer
  */
