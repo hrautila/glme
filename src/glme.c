@@ -23,6 +23,7 @@ glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len)
       gbuf->buf = (char *)0;
     }
     gbuf->buflen = gbuf->buf ? len : 0;
+    gbuf->user = (void *)0;
   }
   return gbuf;
 }
