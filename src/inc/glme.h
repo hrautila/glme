@@ -14,8 +14,12 @@
 #define __INLINE__ extern inline
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
- * Gob Like Message encoder structure
+ * Gob Like Message Encoding buffer
  */
 typedef struct glme_buf_s {
   char *buf;
@@ -23,6 +27,7 @@ typedef struct glme_buf_s {
   size_t count;		// number of bytes writen into the buffer (count <= buflen)
   size_t current;	// current read pointer (current <= count <= buflen)
   int owner;
+  void *user;           // Pointer to user context for encoding/decoding functions.
 } glme_buf_t;
 
 
@@ -1027,7 +1032,11 @@ int glme_decode_end_struct(glme_buf_t *dec);
       GLME_DECODE(dec, fno, elem, float, 0.0)
 
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif  // __GLME_H
 
 
 // Local Variables:
