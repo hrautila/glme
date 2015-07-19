@@ -16,14 +16,15 @@ typedef struct data_t {
 
 #define MSG_DATA_ID 32
 
-int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
+int decode_data_t(glme_buf_t *dec, void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_DATA_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_INT(dec, 0, &msg->blen);
-  GLME_DECODE_BYTES(dec, 1, (void **)&msg->base);
-  GLME_DECODE_END;
+  data_t *msg = (data_t *)ptr;
+  GLME_DECODE_STDDEF(dec);
+  GLME_DECODE_STRUCT_START(dec);
+  GLME_DECODE_FLD_INT(dec, msg->blen, 0);
+  GLME_DECODE_FLD_STRING(dec, msg->base);
+  GLME_DECODE_STRUCT_END(dec);
+  GLME_DECODE_RETURN(dec);
 }
 
 typedef struct client_s {
@@ -113,7 +114,7 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
     // reading message length prefix
     clnt->nread += nread;
     glme_buf_make(&dec, clnt->intmp, sizeof(clnt->intmp), clnt->nread);
-    if ((n = glme_decode_uint(&dec, &clnt->inlen)) < 0) {
+    if ((n = glme_decode_value_uint(&dec, &clnt->inlen)) < 0) {
       // under flow
       clnt->plen = -n;
       return;
@@ -132,7 +133,7 @@ void on_read(uv_stream_t *stream, ssize_t nread, uv_buf_t buf)
     // got all of it
 
     glme_buf_make(&dec, clnt->inbuf, clnt->inlen, clnt->inlen);
-    n = glme_decode_data_t(&dec, &data);
+    n = glme_decode_struct(&dec, MSG_DATA_ID, &data, decode_data_t);
     if (n > 0) {
       fprintf(stderr, ".... decoded %d bytes\n", n);
       free(data.base);

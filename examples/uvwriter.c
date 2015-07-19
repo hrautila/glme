@@ -16,14 +16,15 @@ typedef struct data_t {
 
 #define MSG_DATA_ID 32
 
-int glme_encode_data_t(glme_buf_t *enc, data_t *msg, int typeid)
+int encode_data_t(glme_buf_t *enc, const void *ptr)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, typeid);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_INT(enc, 0, msg->blen);
-  GLME_ENCODE_BYTES(enc, 1, msg->base, msg->blen);
-  GLME_ENCODE_END;
+  const data_t *msg = (const data_t *)ptr;
+  GLME_ENCODE_STDDEF(enc);
+  GLME_ENCODE_STRUCT_START(enc);
+  GLME_ENCODE_FLD_INT(enc, msg->blen, 0);
+  GLME_ENCODE_FLD_VECTOR(enc, msg->base, msg->blen);
+  GLME_ENCODE_STRUCT_END(enc);
+  GLME_ENCODE_RETURN(enc);
 }
 
 typedef struct worker_s {
@@ -56,7 +57,7 @@ int make_data(glme_buf_t *encoder, data_t *data, int nc)
   for (k = 0; k < data->blen; k++) {
     data->base[k] = k % 256;
   }
-  return glme_encode_data_t(encoder, data, MSG_DATA_ID);
+  return glme_encode_struct(encoder, MSG_DATA_ID, data, encode_data_t);
 }
 
 /*
@@ -95,7 +96,7 @@ void on_write(uv_write_t *req, int status)
   // initialize for payload length encoding
   glme_buf_make(&enc, wrkr->outtmp, sizeof(wrkr->outtmp), 0);
   // encode length
-  glme_encode_uint(&enc, n);
+  glme_encode_value_uint(&enc, &n);
   // place to first uvbuf entry
   wrkr->outbuf[0] = uv_buf_init(glme_buf_data(&enc), glme_buf_len(&enc));
   glme_buf_close(&enc);
@@ -141,7 +142,7 @@ void on_connect(uv_connect_t *connect, int status)
   // recreate for payload length encoding
   glme_buf_make(&enc, wrkr->outtmp, sizeof(wrkr->outtmp), 0);
   // encode payload length
-  glme_encode_uint(&enc, n);
+  glme_encode_value_uint(&enc, &n);
   // place to first uvbuf entry
   wrkr->outbuf[0] = uv_buf_init(glme_buf_data(&enc), glme_buf_len(&enc));
   glme_buf_close(&enc);
