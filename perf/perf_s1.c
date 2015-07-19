@@ -16,30 +16,8 @@ typedef struct link {
   struct link *next;
 } link_t;
 
-
-int glme_encode_link_t(glme_buf_t *enc, link_t *rc)
-{
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_LINK_ID);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_INT(enc, 0, rc->val);
-  GLME_ENCODE_STRUCT_PTR(enc, 1, rc->next, glme_encode_link_t);
-  GLME_ENCODE_END(enc);
-}
-
-int glme_decode_link_t(glme_buf_t *dec, link_t *rc)
-{
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_LINK_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_INT(dec, 0, &rc->val);
-  GLME_DECODE_STRUCT_PTR(dec, 1, rc->next, glme_decode_link_t, link_t);
-  GLME_DECODE_END(dec);
-}
-
-
-typedef struct list_t {
-  link_t *head;
+typedef struct list {
+  struct link *head;
 } list_t;
 
 int listcmp(list_t *a, list_t *b)
@@ -56,23 +34,56 @@ int listcmp(list_t *a, list_t *b)
   return 0;
 }
 
-int glme_encode_list_t(glme_buf_t *enc, list_t *lst)
+
+int encode_link(glme_buf_t *gb, const void *vptr)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_LIST_ID);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_STRUCT_PTR(enc, 0, lst->head, glme_encode_link_t);
-  GLME_ENCODE_END(enc);
+  const struct link *lnk = (const struct link *)vptr;
+  GLME_ENCODE_STDDEF(gb);
+  GLME_ENCODE_STRUCT_START(gb);
+
+  GLME_ENCODE_FLD_INT(gb, lnk->val, 0);
+  GLME_ENCODE_FLD_STRUCT(gb, MSG_LINK_ID, lnk->next, encode_link);
+
+  GLME_ENCODE_STRUCT_END(gb);
+  GLME_ENCODE_RETURN(gb);
+}
+
+int decode_link(glme_buf_t *gb, void *ptr)
+{
+  struct link *lnk = (struct link *)ptr;
+  GLME_DECODE_STDDEF(gb);
+  GLME_DECODE_STRUCT_START(gb);
+
+  GLME_DECODE_FLD_INT(gb, lnk->val, 0);
+  GLME_DECODE_FLD_STRUCT_PTR(gb, MSG_LINK_ID, lnk->next, decode_link);
+
+  GLME_DECODE_STRUCT_END(gb);
+  GLME_DECODE_RETURN(gb);
 }
 
 
-int glme_decode_list_t(glme_buf_t *dec, list_t *lst)
+int encode_list(glme_buf_t *gb, const void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_LIST_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_STRUCT_PTR(dec, 0, lst->head, glme_decode_link_t, link_t);
-  GLME_DECODE_END(dec);
+  const struct list *l = (const struct list *)ptr;
+  GLME_ENCODE_STDDEF(gb);
+  GLME_ENCODE_STRUCT_START(gb);
+
+  GLME_ENCODE_FLD_STRUCT(gb, MSG_LINK_ID, l->head, encode_link);
+  
+  GLME_ENCODE_STRUCT_END(gb);
+  GLME_ENCODE_RETURN(gb);
+}
+
+int decode_list(glme_buf_t *gb, void *ptr)
+{
+  struct list *l = (struct list *)ptr;
+  GLME_DECODE_STDDEF(gb);
+  GLME_DECODE_STRUCT_START(gb);
+
+  GLME_DECODE_FLD_STRUCT_PTR(gb, 33, l->head, decode_link);
+
+  GLME_DECODE_STRUCT_END(gb);
+  GLME_DECODE_RETURN(gb);
 }
 
 static inline
@@ -107,7 +118,7 @@ uint64_t run_test(uint64_t clocks[], glme_buf_t *encoder, list_t *msg)
     before = read_tsc();
     // ------ start of test ---
 
-    n = glme_encode_list_t(encoder, msg);
+    n = glme_encode_struct(encoder, MSG_LIST_ID, msg, encode_list);
 
     // ------ end of test -----
     clocks[k] = read_tsc() - before;
@@ -144,7 +155,8 @@ int main(int argc, char **argv)
   long vlen;
 
   clockrate = 2.40;  // GHz
-  vlen = 100000;
+  // this many list entries --> max depth recursive calls 
+  vlen = 20000;
 
   memset(&lst, 0, sizeof(lst));
 

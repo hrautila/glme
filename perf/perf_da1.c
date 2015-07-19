@@ -27,23 +27,25 @@ int datacmp(data_t *a, data_t *b)
 
 #define MSG_DATA_ID 32
 
-int glme_encode_data_t(glme_buf_t *enc, data_t *msg)
+int encode_data_t(glme_buf_t *enc, const void *ptr)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_DATA_ID);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_ARRAY(enc, 0, msg->vec, msg->vlen, double);
-  GLME_ENCODE_END(enc);
+  const data_t *msg = (const data_t *)ptr;
+  GLME_ENCODE_STDDEF(enc);
+  GLME_ENCODE_STRUCT_START(enc);
+  GLME_ENCODE_FLD_FLOAT_ARRAY(enc, msg->vec, msg->vlen, glme_encode_value_double);
+  GLME_ENCODE_STRUCT_END(enc);
+  GLME_ENCODE_RETURN(enc);
 }
 
 
-int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
+int decode_data_t(glme_buf_t *dec, void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_DATA_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_VAR_ARRAY(dec, 0, msg->vec, msg->vlen, double, double);
-  GLME_DECODE_END(dec);
+  data_t *msg = (data_t *)ptr;
+  GLME_DECODE_STDDEF(dec);
+  GLME_DECODE_STRUCT_START(dec);
+  GLME_DECODE_FLD_FLOAT_ARRAY(dec, msg->vec, msg->vlen, glme_encode_value_double);
+  GLME_DECODE_STRUCT_END(dec);
+  GLME_DECODE_RETURN(dec);
 }
 
 static inline
@@ -78,7 +80,7 @@ uint64_t run_test(uint64_t clocks[], glme_buf_t *encoder, data_t *msg)
     before = read_tsc();
     // ------ start of test ---
 
-    n = glme_encode_data_t(encoder, msg);
+    n = glme_encode_struct(encoder, MSG_DATA_ID, msg, encode_data_t);
 
     // ------ end of test -----
     clocks[k] = read_tsc() - before;
