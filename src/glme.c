@@ -13,6 +13,7 @@ glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len)
 {
   if (gbuf) {
     gbuf->count = gbuf->current = 0;
+    gbuf->buflen = gbuf->owner = 0;
     // allow initialization to zero size
     if (len > 0) {
       gbuf->buf = malloc(len);
@@ -83,6 +84,12 @@ size_t glme_buf_at(glme_buf_t *gbuf)
   return gbuf ? gbuf->current : 0;
 }
 
+void glme_buf_seek(glme_buf_t *gbuf, size_t pos)
+{
+  if (gbuf)  
+    gbuf->current = pos < gbuf->count ? pos : gbuf->count;
+}
+
 void glme_buf_pushback(glme_buf_t *gbuf, size_t n)
 {
   if (!gbuf)
@@ -115,17 +122,15 @@ size_t glme_buf_size(glme_buf_t *gbuf)
 
 void glme_buf_resize(glme_buf_t *gbuf, size_t increase)
 {
-  char *b = malloc(gbuf->buflen + increase);
-  if (b) {
-    if (gbuf->buf) {
-      // copy if we have buffer and content in it.
-      if (gbuf->count > 0)
-	memcpy(b, gbuf->buf, gbuf->count);
-      if (gbuf->owner)
-        free(gbuf->buf);
+  // resize only of owner of the data buffer or if current size is zero
+  // and owner is not set
+  if (gbuf->owner == 1 || gbuf->buflen == 0) {
+    char *b = realloc(gbuf->buf, gbuf->buflen + increase);
+    if (b) {
+      gbuf->buf = b;
+      gbuf->buflen += increase;
+      gbuf->owner = 1;
     }
-    gbuf->buf = b;
-    gbuf->buflen += increase;
   }
 }
 
@@ -169,7 +174,7 @@ int glme_buf_readm(glme_buf_t *dec, int fd, size_t maxlen)
     return 0;
 
   glme_buf_make(&gbuf, tmp, sizeof(tmp), 1);
-  if ((n = glme_decode_uint64(&gbuf, &mlen)) < 0) {
+  if ((n = glme_decode_value_uint64(&gbuf, &mlen)) < 0) {
     // read more; -n is length of encoded prefix; read missing part
     nc = -(n+1);
     n = read(fd, &tmp[1], nc);
@@ -181,7 +186,7 @@ int glme_buf_readm(glme_buf_t *dec, int fd, size_t maxlen)
     nc++;
     glme_buf_make(&gbuf, tmp, sizeof(tmp), nc);
     // decode again
-    n = glme_decode_uint64(&gbuf, &mlen);
+    n = glme_decode_value_uint64(&gbuf, &mlen);
     if (n < 0) 
       return -1;
   }
