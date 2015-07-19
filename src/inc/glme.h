@@ -18,6 +18,34 @@
 extern "C" {
 #endif
 
+  enum glme_types {
+    GLME_BOOLEAN        = 1,
+    GLME_INT            = 2,
+    GLME_UINT           = 3,
+    GLME_FLOAT          = 4,
+    GLME_VECTOR         = 5,
+    GLME_STRING         = 6,
+    GLME_COMPLEX        = 7,
+    GLME_ARRAY          = 10,
+    GLME_MAP            = 11, /* Reserved */
+    GLME_NAMED_STRUCT   = 12, /* Reserved */
+    GLME_NAMED_MAP      = 13, /* Reserved */
+    GLME_BASE_MAX       = 15
+  };
+
+  enum glme_flags {
+    GLME_F_NONE   = 0x0,
+    GLME_F_ARRAY  = 0x1,
+    GLME_F_PTR    = 0x2
+  };
+
+  /* Not yet used, needs some thought. */
+  enum glme_errors {
+    GLME_E_INPUT = -1,
+    GLME_E_INVAL = -2,
+    GLME_E_TYPE  = -3
+  };
+
 /**
  * Gob Like Message Encoding buffer
  */
@@ -31,6 +59,9 @@ typedef struct glme_buf_s {
 } glme_buf_t;
 
 
+typedef int (*encoder)(glme_buf_t *, const void *);
+typedef int (*decoder)(glme_buf_t *, void *);
+
 /**
  * Initialize the specified gbuf with space of len bytes.
  *
@@ -42,7 +73,7 @@ typedef struct glme_buf_s {
  * @return
  *   Initialized buffer.
  */
-glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len);
+extern glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len);
 
 /**
  * Make glme_buf from spesified data buffer.
@@ -58,7 +89,7 @@ glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len);
  * @return
  *   Initialized glme_buf.
  */
-glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count);
+extern glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count);
 
 /**
  * Create new glme_buf with buffer space of len bytes.
@@ -69,52 +100,57 @@ glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count
  * @return
  *   New initialized glme_buf.
  */
-glme_buf_t *glme_buf_new(size_t len);
+extern glme_buf_t *glme_buf_new(size_t len);
 
 /**
  * Close the glme_buf. Releases allocated buffer and reset read pointers.
  */
-void glme_buf_close(glme_buf_t *gbuf);
+extern void glme_buf_close(glme_buf_t *gbuf);
 
 /**
  * Release the glme_buf.
  */
-void glme_buf_free(glme_buf_t *gbuf);
+extern void glme_buf_free(glme_buf_t *gbuf);
 
 /**
  * Reset glme_buf read pointer.
  */
-void glme_buf_reset(glme_buf_t *gbuf);
+extern void glme_buf_reset(glme_buf_t *gbuf);
 
 /**
  * Get glme_buf read pointer.
  */
-size_t glme_buf_at(glme_buf_t *gbuf);
+extern size_t glme_buf_at(glme_buf_t *gbuf);
+
+/**
+ * Set glme_buf read pointer.
+ */
+extern void glme_buf_seek(glme_buf_t *gbuf, size_t pos);
 
 /**
  * Pushback read pointer.
  */
-void glme_buf_pushback(glme_buf_t *gbuf, size_t n);
+extern void glme_buf_pushback(glme_buf_t *gbuf, size_t n);
 
 /**
  * Clear glme_buf contents.
  */
-void glme_buf_clear(glme_buf_t *gbuf);
+extern void glme_buf_clear(glme_buf_t *gbuf);
 
 /**
  * Get content
  */
-char *glme_buf_data(glme_buf_t *gbuf);
+extern char *glme_buf_data(glme_buf_t *gbuf);
 
 /**
  * Get encoded content length.
  */
-size_t glme_buf_len(glme_buf_t *gbuf);
+extern size_t glme_buf_len(glme_buf_t *gbuf);
 
 /**
  * Get size.
  */
-size_t glme_buf_size(glme_buf_t *gbuf);
+extern size_t glme_buf_size(glme_buf_t *gbuf);
 
 /**
  * Read length prefix message from file descriptor to spesified buffer.
@@ -122,12 +158,12 @@ size_t glme_buf_size(glme_buf_t *gbuf);
  * @return
  *    total number of bytes read.
  */
-int glme_buf_readm(glme_buf_t *gbuf, int fd, size_t maxlen);
+extern int glme_buf_readm(glme_buf_t *gbuf, int fd, size_t maxlen);
 
 /**
  * Write encoded content to file descriptor as length prefix message.
  */
-int glme_buf_writem(glme_buf_t *gbuf, int fd);
+extern int glme_buf_writem(glme_buf_t *gbuf, int fd);
 
 
 /**
@@ -141,21 +177,21 @@ int glme_buf_writem(glme_buf_t *gbuf, int fd);
  * Resizing a glme_buf with externally allocated buffer may cause memory leaks
  * if old buffer is not properly released elsewhere.
  */
-void glme_buf_resize(glme_buf_t *gbuf, size_t increase);
+extern void glme_buf_resize(glme_buf_t *gbuf, size_t increase);
 
 /**
  * Disown glme_buf allocated space.
  */
-void glme_buf_disown(glme_buf_t *gbuf);
+extern void glme_buf_disown(glme_buf_t *gbuf);
 
 /**
  * Own glme_buf allocated space.
  */
-void glme_buf_own(glme_buf_t *gbuf);
+extern void glme_buf_own(glme_buf_t *gbuf);
 
 
 /**
- * Encode unsigned 64 bit integer into the specified buffer.
+ * Encode unsigned 64 bit integer type or value into the specified buffer.
  *
  * @param gbuf
  *    Buffer to write data into.
@@ -166,96 +202,160 @@ void glme_buf_own(glme_buf_t *gbuf);
  *    Number of bytes writen. If buffer buffer resize fails returns -1 for
  *    error.
  */
-int glme_encode_uint64(glme_buf_t *gbuf, uint64_t v);
+extern int glme_encode_uint64(glme_buf_t *gbuf, const uint64_t *v);
+extern int glme_encode_value_uint64(glme_buf_t *gbuf, const uint64_t *v);
 
 /**
- * Encode signed integer into the specified buffer.
+ * Encode signed 64 bit integer type or value into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_int64(glme_buf_t *gbuf, int64_t v);
+extern int glme_encode_int64(glme_buf_t *gbuf, const int64_t *v);
+extern int glme_encode_value_int64(glme_buf_t *gbuf, const int64_t *v);
 
 /**
  * Encode double precision floating point number into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_double(glme_buf_t *gbuf, double v);
-
-/**
- * Encode uninterpreted byte stream into the specified buffer.
- *
- * @see glme_encode_uint64
- */
-int glme_encode_bytes(glme_buf_t *gbuf, void *s, size_t len);
+extern int glme_encode_double(glme_buf_t *gbuf, const double *v);
+extern int glme_encode_value_double(glme_buf_t *gbuf, const double *v);
 
 
 /**
- * Encode unsigned long into the specified buffer.
+ * Encode unsigned long type or value into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_ulong(glme_buf_t *gbuf, unsigned long v);
+extern int glme_encode_ulong(glme_buf_t *gbuf, const unsigned long *v);
+extern int glme_encode_value_ulong(glme_buf_t *gbuf, const unsigned long *v);
 
 /**
- * Encode signed long into the specified buffer.
+ * Encode signed long  type or value into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_long(glme_buf_t *gbuf, long v);
+extern int glme_encode_long(glme_buf_t *gbuf, const long *v);
+extern int glme_encode_value_long(glme_buf_t *gbuf, const long *v);
 
 /**
- * Encode unsigned int into the specified buffer.
+ * Encode unsigned int type or value into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_uint(glme_buf_t *gbuf, unsigned int v);
+extern int glme_encode_uint(glme_buf_t *gbuf, const unsigned int *v);
+extern int glme_encode_value_uint(glme_buf_t *gbuf, const unsigned int *v);
 
 /**
- * Encode signed int into the specified buffer.
+ * Encode signed int type or value into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_int(glme_buf_t *gbuf, int v);
+extern int glme_encode_int(glme_buf_t *gbuf, const int *v);
+extern int glme_encode_value_int(glme_buf_t *gbuf, const int *v);
 
 /**
  * Encode single precision float into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_float(glme_buf_t *gbuf, float v);
+extern int glme_encode_float(glme_buf_t *gbuf, const float *v);
+extern int glme_encode_value_float(glme_buf_t *gbuf, const float *v);
 
 /**
- * Encode string into the specified buffer.
+ * Encode uninterpreted byte stream value into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_string(glme_buf_t *gbuf, char *s);
-
+extern int glme_encode_bytes(glme_buf_t *gbuf, const void *s, size_t len);
 
 /**
- * Encode array start into the specified buffer.
+ * Encode vector or string type into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_start_array(glme_buf_t *gbuf, size_t sz);
+extern int glme_encode_string(glme_buf_t *gbuf, const char *s);
+extern int glme_encode_vector(glme_buf_t *gbuf, const char *s, size_t len);
 
-int glme_encode_end_array(glme_buf_t *gbuf, size_t sz);
 
+/**
+ * Encode array start into the specified buffer. Array header consists of element
+ * typeid and unsigned number of elements.
+ *
+ * @see glme_encode_uint64
+ */
+extern int glme_encode_array_header(glme_buf_t *gbuf, int typeid, size_t sz);
+
+/**
+ * Encode array data elements into the specified buffer.
+ *
+ * @param  enc    Encode buffer
+ * @param  vptr   Array elements
+ * @param  len    Number of elements
+ * @param  esize  Element size in bytes
+ * @param  efunc  Element value encoding function
+ */
+extern int glme_encode_array_data(glme_buf_t *enc, const void *vptr,
+                                  size_t len, size_t esize, encoder efunc);
+
+/**
+ * Encode array with given element type into the specified buffer.
+ *
+ * @param   gbuf    Encode buffer
+ * @param   typeid  Array element typeid
+ * @param   vptr    Array pointer
+ * @param   len     Number of elements in the array
+ * @param   esize   Array element size
+ * @param   efunc   Element value encoding function
+ *
+ * @return
+ *    Negative error code or number of bytes writen to encode buffer.
+ */
+extern int glme_encode_array(glme_buf_t *gbuf, int typeid, const void *vptr,
+                             size_t len, size_t esize, encoder efunc);
+extern int glme_encode_value_array(glme_buf_t *enc, int typeid, const void *vptr,
+                                   size_t len,  size_t esize, encoder efunc);
 
 /**
  * Encode struct start into the specified buffer.
  *
  * @see glme_encode_uint64
  */
-int glme_encode_start_struct(glme_buf_t *gbuf, int typeid);
-
-
-int glme_encode_end_struct(glme_buf_t *gbuf);
-
+extern int glme_encode_start_struct(glme_buf_t *gbuf, int *delta);
 
 /**
- * Decode unsigned 64 bit integer from the specified decoder.
+ * Encode structure field into the specified buffer
+ *
+ * @param   gbuf    Encode buffer
+ * @param   delta   Pointer to field counter delta
+ * @param   typeid  Element type, if array then array element typeid
+ * @param   flags   Flag bits 
+ * @param   vptr    Pointer to field value
+ * @param   nlen    Number of elements in array
+ * @param   esize   Element size, used also not-empty value indicator for simple types.
+ * @param   efunc   Element value encoder function
+ *
+ */
+extern int glme_encode_field(glme_buf_t *gbuf, int *delta, int typeid, int flags,
+                             const void *vptr, size_t nlen, size_t esize, encoder efunc);
+
+/**
+ * Encode structure end mark into the specified buffer.
+ */
+extern int glme_encode_end_struct(glme_buf_t *gbuf);
+
+/**
+ * Encode structure into the specified buffer.
+ */
+extern int glme_encode_struct(glme_buf_t *enc, int typeid, const void *ptr, encoder efunc);
+
+/**
+ * Encode type id into the specified buffer.
+ */
+extern int glme_encode_type(glme_buf_t *gbuf, int typeid);
+
+/**
+ * Decode unsigned 64 bit integer type or value from the specified decoder.
  *
  * @param dec
  *   Decoder
@@ -265,7 +365,8 @@ int glme_encode_end_struct(glme_buf_t *gbuf);
  *   Number of bytes read from decoder. Negative value indicates 
  *   underflow and number of bytes needed to decode value.
  */
-int glme_decode_uint64(glme_buf_t *dec, uint64_t *v);
+extern int glme_decode_uint64(glme_buf_t *dec, uint64_t *v);
+extern int glme_decode_value_uint64(glme_buf_t *dec, uint64_t *v);
 
 
 /**
@@ -274,762 +375,759 @@ int glme_decode_uint64(glme_buf_t *dec, uint64_t *v);
  *
  * @see glme_decode_uint64
  */
-int glme_decode_uint64_peek(glme_buf_t *dec, uint64_t *v);
+extern int glme_decode_peek_uint64(glme_buf_t *dec, uint64_t *v);
 
 /**
- * Decode signed 64 bit integer from the specified decoder.
+ * Decode signed 64 bit integer type or value from the specified decoder.
  *
  * @param dec
  *   Decoder
  * @param v
  *   Pointer to value store location.
  */
-int glme_decode_int64(glme_buf_t *dec, int64_t *v);
+extern int glme_decode_int64(glme_buf_t *dec, int64_t *v);
+extern int glme_decode_value_int64(glme_buf_t *dec, int64_t *v);
 
 /**
  * Read signed 64 bit integer from the specified decoder without
  * moving internal read pointers.
  *
  */
-int glme_decode_int64_peek(glme_buf_t *dec, int64_t *v);
+extern int glme_decode_peek_int64(glme_buf_t *dec, int64_t *v);
 
 
 /**
- * Decode double precision IEEE floating point number from the specified decoder.
+ * Decode double precision IEEE floating point type or valuer from the
+ * specified decoder.
  *
  * @param dec
  *   Decoder
  * @param v
  *   Pointer to value store location.
  */
-int glme_decode_double(glme_buf_t *dec, double *v);
+extern int glme_decode_double(glme_buf_t *dec, double *v);
+extern int glme_decode_value_double(glme_buf_t *dec, double *v);
 
-int glme_decode_float(glme_buf_t *dec, float *v);
+extern int glme_decode_float(glme_buf_t *dec, float *v);
+extern int glme_decode_value_float(glme_buf_t *dec, float *v);
 
-/**
- * Decode fixed length bytes stream from the specified decoder.
- */
-int glme_decode_vec(glme_buf_t *dec, void *s, size_t len);
-
-/**
- * Decode variable length byte array from the specified decoder.
- * Allocates space for decoded data.
- */
-int glme_decode_bytes(glme_buf_t *dec, void **s);
-
-/**
- * Decode variable length string from the specified decoder.
- */
-int glme_decode_string(glme_buf_t *dec, char **s);
 
 /**
  * Decode unsigned long from the specified decoder.
  *
  * @see glme_decode_uint64
  */
-int glme_decode_ulong(glme_buf_t *dec, unsigned long *u);
+extern int glme_decode_ulong(glme_buf_t *dec, unsigned long *u);
+extern int glme_decode_value_ulong(glme_buf_t *dec, unsigned long *u);
 
 /**
- * Decode signed long from the specified decoder.
+ * Decode signed long type or value from the specified decoder.
  *
  * @see glme_decode_int64
  */
-int glme_decode_long(glme_buf_t *dec, long *d);
+extern int glme_decode_long(glme_buf_t *dec, long *d);
+extern int glme_decode_value_long(glme_buf_t *dec, long *d);
 
 
 /**
- * Decode unsigned int from the specified decoder.
+ * Decode unsigned int type or value from the specified decoder.
  *
  * @see glme_decode_uint64
  */
-int glme_decode_uint(glme_buf_t *dec, unsigned int *u);
+extern int glme_decode_uint(glme_buf_t *dec, unsigned int *u);
+extern int glme_decode_value_uint(glme_buf_t *dec, unsigned int *u);
 
 /**
- * Decode signed int from the specified decoder.
+ * Decode signed int type or value from the specified decoder.
  *
  * @see glme_decode_int64
  */
-int glme_decode_int(glme_buf_t *dec, int *d);
+extern int glme_decode_int(glme_buf_t *dec, int *d);
+extern int glme_decode_value_int(glme_buf_t *dec, int *d);
 
 /**
- * Read end of struct marker from the specified decoder.
+ * Decode byte array or string into a fixed length bytes vector
+ * from the specified decoder.
+ *
+ * If destination buffer length less than encoded buffer length then
+ * only len bytes are copied from the buffer. If encoded length less
+ * buffer length then extra space in buffer is zeroed.
+ *
+ * Stream: [<GLME_VECTOR|GLME_STRING>, <length> <data>]
+ */
+extern int glme_decode_vector(glme_buf_t *dec, void *s, size_t len);
+
+/**
+ * Decode data of variable length byte array from the specified decoder.
+ * Allocates space for decoded data if len is zero. Otherwise 's' is assumed
+ * contain pointer to allocated buffer of size 'len'.
+ *
+ * stream: [<length> <data>]
+ */
+extern int glme_decode_bytes(glme_buf_t *dec, void **s, size_t len);
+
+/**
+ * Decode variable length string from the specified decoder.
+ *
+ * stream: [<GLME_STRING> <length> <data>]
+ */
+extern int glme_decode_string(glme_buf_t *dec, char **s);
+
+/**
+ * Read (peek) start of struct marker from the specified decoder.
  *
  * @return
- *   Length of the marker (1 bytes) or negative error code if next
- *   is not end-of-struct marker.
+ *   Length of the start struct header.
+ *
+ * stream: [<GLME_STRUCT> <typeid> ....]
  */
-int glme_decode_end_struct(glme_buf_t *dec);
+extern int glme_decode_start_struct(glme_buf_t *dec, int *typeid);
+extern int glme_decode_peek_struct(glme_buf_t *dec, int *typeid);
 
+/**
+ * Read next field number from the decoder.
+ *
+ * @param dec   Decoder
+ * @param next  Next field number
+ * @param cur   Current field number
+ *
+ * Field offset is read from the buffer and value of next is set to cur + offset - 1.
+ * If offset is zero then next is set to -1.
+ *
+ * @return
+ *    Number of bytes consumed or negative error number.
+ */
+extern int glme_decode_field_id(glme_buf_t *dec, int *next, int cur);
 
+/**
+ * Read next field number from the decoder.
+ *
+ * @param dec    Decoder
+ * @param delta  Current delta value
+ * @param typeid Expected type id
+ * @param flags  Flag bits
+ * @param vptr   Element pointer
+ * @param nlen   Number of elements in array
+ * @param esize  Element size
+ * @param dfunc  Element decoder function
+ *
+ * @return
+ *    Number of bytes consumed or negative error number.
+ */
+extern int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int typeid, int flags,
+                             void *vptr, size_t *nlen, size_t esize, decoder dfunc);
+
+/**
+ * Initialize structure decoder
+ */
+extern int glme_decode_start_struct(glme_buf_t *dec, int *delta);
+/**
+ * Read end of struct marker from the specified decoder.
+ */
+extern int glme_decode_end_struct(glme_buf_t *dec);
+
+/**
+ * Read structure type from the specified buffer.
+ */
+extern int glme_decode_struct(glme_buf_t *dec, int typeid, void *dptr, decoder dfunc);
+
+/**
+ * Read structure value from the specified buffer.
+ */
+extern int glme_decode_value_struct(glme_buf_t *dec, void *dptr, decoder dfunc);
+
+/**
+ * Read start of array from the specified decoder.
+ *
+ * Array start is ARRAY typeid, element typeid and unsigned count of elements.
+ */
+extern int glme_decode_array_start(glme_buf_t *dec, int *typeid, size_t *len);
+
+/**
+ * Read array header from the specified decoder.
+ *
+ * Array header is element typeid and unsigned count of elements.
+ */
+extern int glme_decode_array_header(glme_buf_t *dec, int *typeid, size_t *len);
+
+/**
+ * Read array data from the specified decoder.
+ *
+ * @param dec    Decoder
+ * @param dst    Target array. If null then space is allocated.
+ * @param nlen   Number of elements in array
+ * @param esize  Element size
+ * @param func   Element decoder function
+
+ * @return
+ *   Number of bytes read or negative error code.
+ */
+extern int glme_decode_array_data(glme_buf_t *dec, void **dst,
+                                  size_t len, size_t esize, decoder func);
+
+/**
+ * Read array from the specified buffer.
+ */
+extern int glme_decode_array(glme_buf_t *dec, int *typeid, void **dst,
+                             size_t *len, size_t esize, decoder func);
+
+/**
+ * Read array value from the specified buffer. (Array sans ARRAY typeid)
+ */
+extern int glme_decode_value_array(glme_buf_t *dec, int *typeid, void **dst,
+                                   size_t *len, size_t esize, decoder func);
+
+/**
+ * Read type id from the specified buffer.
+ */
+extern int glme_decode_type(glme_buf_t *dec, int *t);
+
+/**
+ * Read type id from the specified buffer.
+ *
+ * @return
+ *   Positive non-zero number bytes read or negative value if
+ *   type id does not match parameter typeid.
+ */
+extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
 
 // ----------------------------------------------------------------------------
-// encode macros
+// encode helper macros
 
 /**
- * Encode function stardard definitions
+ * Encoder standard definitions.
  */
-#define GLME_ENCODE_STDDEF                      \
-  int __n, __nc = 0, __delta = 1, __skip_array
-
-/**
- * Encode function stardard ending
- */
-#define GLME_ENCODE_END(enc)                    \
-  __n = glme_encode_end_struct(enc);		\
-  if (__n < 0) return -4;                       \
-  __nc += __n;					\
-  return __nc
-
-/**
- * Encode structure type id
- */
-#define GLME_ENCODE_TYPE(enc, typeid)                   \
-  do {                                                  \
-    __n = glme_encode_start_struct(enc, typeid);	\
-    if (__n < 0) return -1;                             \
-    __nc += __n;					\
-    __delta = 1;					\
-  } while (0);
-
-/**
- * Initialize field delta.
- */
-#define GLME_ENCODE_DELTA(enc)
-
-#define GLME_ENCODE(enc, fno, elem, typename, nullv)	\
-  do {							\
-    if ( (elem) != nullv ) {				\
-      __n = glme_encode_uint64(enc, __delta);		\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __n = glme_encode_ ## typename (enc, elem);       \
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;					\
-      __delta = 1;					\
-    } else {						\
-      __delta += 1;					\
-    }							\
-  } while (0)
+#define GLME_ENCODE_STDDEF(enc)                 \
+  int __e, __ne, __delta;                       \
+  size_t __nl, __start_at = (enc)->count
 
 
 /**
- * Encode fixed length byte vector.
- */
-#define GLME_ENCODE_VEC(enc, fno, vec, len)	\
-  do {						\
-    if ( (len) != 0 ) {				\
-      __n = glme_encode_uint64(enc, __delta);	\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                              \
-      __n = glme_encode_bytes(enc, vec, len);	\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                              \
-      __delta = 1;				\
-    } else {					\
-      __delta += 1;				\
-    }						\
-  } while (0)
-
-
-/**
- * Encode byte array of length len pointed by ptr.
- */
-#define GLME_ENCODE_BYTES(enc, fno, ptr, len)	\
-  do {						\
-    if ( (ptr) && (len) != 0 ) {                \
-      __n = glme_encode_uint64(enc, __delta);	\
-      if (__n < 0) return -(fno+10);            \
-      __nc += __n;                              \
-      __n = glme_encode_bytes(enc, ptr, len);	\
-      if (__n < 0) return -(fno+10);            \
-      __nc += __n;                              \
-      __delta = 1;				\
-    } else {					\
-      __delta += 1;				\
-    }						\
-  } while (0)
-
-/**
- * Encode variable length string.
- */
-#define GLME_ENCODE_STR(enc, fno, vec)			\
-  do {							\
-    if ( (vec) && strlen(vec) != 0 ) {			\
-      __n = glme_encode_uint64(enc, __delta);		\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __n = glme_encode_bytes(enc, vec, strlen(vec)+1);	\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __delta = 1;					\
-    } else {						\
-      __delta += 1;					\
-    }							\
-  } while (0)
-
-/**
- * Encode fixed length array
+ * Encode structure header
  *
- * @param enc   Encode
- * @param fno   Field number
- * @param vec   Array
- * @param len   Array length
- * @param gname Basic GLME encoder name.
- *
- * Parameter gname is used to construct name of the GLME encoder
- * function of form 'glme_encode_<gname>'.
+ * @param enc    Encode buffer
+ * @param typeid Type id for structure type.
  */
-#define GLME_ENCODE_ARRAY(enc, fno, vec, len, gname)	\
-  do {							\
-    if ( (len) != 0 ) {					\
-      int __k;						\
-      __n = glme_encode_uint64(enc, __delta);		\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __n = glme_encode_uint64(enc, len);               \
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      for (__k = 0; __k < (len); __k++) {               \
-	__n = glme_encode_ ## gname (enc, vec[__k]);	\
-        if (__n < 0) return -(fno+10);                  \
-        __nc += __n;					\
-      }							\
-      __delta = 1;					\
-    } else {						\
-      __delta += 1;					\
-    }							\
+#define GLME_ENCODE_STRUCT_START(enc) \
+  do { \
+    if (glme_encode_start_struct(enc, &__delta) < 0)	\
+      return -1;					\
   } while (0)
 
 /**
- * Encode variable size array of arbitrary type.
+ * Encode structure end marker. Make return with number of bytes encoded.
  *
- * @param enc   Encoder
- * @param fno   Field number
- * @param vec   Pointer to array
- * @param len   Number of elements
- * @param func  Encoder function name
- *
- * Parameter func must declared as int (*func)(glme_buf_t *, <element type> *).
+ * @param enc    Encode buffer
  */
-#define GLME_ENCODE_ANY_ARRAY(enc, fno, vec, len, func)	\
-  do {							\
-    if ( (len) != 0 ) {					\
-      int __k;						\
-      __n = glme_encode_uint64(enc, __delta);		\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __n = glme_encode_uint64(enc, len);               \
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      for (__k = 0; __k < (len); __k++) {               \
-	__n = (*func)(enc, &vec[__k]);                  \
-        if (__n < 0) return -(fno+10);                  \
-        __nc += __n;					\
-      }							\
-      __delta = 1;					\
-    } else {						\
-      __delta += 1;					\
-    }							\
+#define GLME_ENCODE_STRUCT_END(enc)              \
+  do {                                           \
+    if (glme_encode_end_struct(enc) < 0)         \
+      return -4;                                 \
+  } while (0)
+
+#define GLME_ENCODE_RETURN(enc) \
+  return (enc)->count - __start_at
+
+/**
+ * Encode signed integer
+ *
+ * @param enc    Encode buffer
+ * @param elem   Signed integer element
+ * @param defval Default value, field omitted if it's value is equal to defval
+ */
+#define GLME_ENCODE_FLD_INT(enc, elem, defval)                      \
+  do {                                                              \
+    int64_t __i64 = (int64_t)(elem);                                \
+    __ne = (elem) != defval;                                        \
+    __e = glme_encode_field(enc, &__delta, GLME_INT, 0, &__i64, 0,  \
+                            __ne, (encoder)glme_encode_int64);      \
+    if (__e < 0) return __e;                                        \
   } while (0)
 
 /**
- * Encode start of array; encode current delta and array length
+ * Encode unsigned integer
  *
- * Code for encoding actual elements must follow this definition. If length is
- * zero then array is omitted from the encoded stream and code between START_ARRAY
- * and END_ARRAY macros is not executed.
+ * @param enc    Encode buffer
+ * @param elem   Unsigned integer element
+ * @param defval Default value, field omitted if it's value is equal to defval
  */
-#define GLME_ENCODE_START_ARRAY(enc, fno, len)  \
-  do {                                          \
-    __skip_array = 0;                           \
-    if ( (len) == 0) {                          \
-      __skip_array = 1;                         \
-      goto empty_array ## fno;                  \
-    }                                           \
-    __n = glme_encode_uint64(enc, __delta);     \
-    if (__n < 0) return -(fno+10);              \
-    __nc += __n;                                \
-    __n = glme_encode_uint64(enc, len);         \
-    if (__n < 0) return -(fno+10);              \
-    __nc += __n;                                \
-    __delta = 1;                                \
+#define GLME_ENCODE_FLD_UINT(enc, elem, defval)                     \
+  do {                                                              \
+    uint64_t __u64 = (uint64_t)(elem);                              \
+    __ne = (elem) != defval;                                        \
+    __e = glme_encode_field(enc, &__delta, GLME_UINT, 0, &__u64, 0, \
+                            __ne, (encoder)glme_encode_uint64);     \
+    if (__e < 0) return __e;                                        \
+  } while (0)
+
+/**
+ * Encode floating point number
+ *
+ * @param enc    Encode buffer
+ * @param fno    Field number (for error codes)
+ * @param elem   Floating point element
+ * @param defval Default value, field omitted if it's value is equal to defval
+ */
+#define GLME_ENCODE_FLD_DOUBLE(enc, elem, defval)                    \
+  do {                                                               \
+    double __f64 = (double)(elem);                                   \
+    __ne = (elem) != defval;                                         \
+    __e = glme_encode_field(enc, &__delta, GLME_FLOAT, 0, &__f64, 0, \
+                            __ne, (encoder)glme_encode_double);      \
+    if (__e < 0) return __e;                                         \
   } while (0)
 
 
 /**
- * End of array for matching start of array; inserts code for handling
- * zero length arrays.
+ * Encode null terminated string.
+ *
+ * @param enc   Encode buffer
+ * @param elem  Pointer to string element
  */
-#define GLME_ENCODE_END_ARRAY(enc, fno)		\
-    empty_array##fno:				\
-    do {                                        \
-      if (__skip_array != 0) {			\
-        __delta += 1;                           \
-      }                                         \
-    } while (0)
-  
-  
-
-/**
- * Encode embedded struct
- */
-#define GLME_ENCODE_STRUCT(enc, fno, elem, func)	\
-    do {                                                \
-      int __k;						\
-      __n = glme_encode_uint64(enc, __delta);		\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __n = (*func) (enc, elem);                        \
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;					\
-      __delta = 1;					\
-    } while (0)
-
-/**
- * Encode struct pointer
- */
-#define GLME_ENCODE_STRUCT_PTR(enc, fno, elem, func)	\
-  do {							\
-    if ( (elem) ) {					\
-      __n = glme_encode_uint64(enc, __delta);		\
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;                                      \
-      __n = (*func) (enc, elem);                        \
-      if (__n < 0) return -(fno+10);                    \
-      __nc += __n;					\
-      __delta = 1;					\
-    } else {						\
-      __delta += 1;					\
-    }							\
+#define GLME_ENCODE_FLD_STRING(enc, elem)                  \
+  do {                                                     \
+    __e = glme_encode_field(enc, &__delta, GLME_STRING, 0, \
+                            (elem), 0, 1, (encoder)0);     \
+    if (__e < 0) return __e;                               \
   } while (0)
 
 /**
- * Encode unsigned 64 bit integer.
+ * Encode byte vector of specified length.
+ *
+ * @param enc   Encode buffer
+ * @param elem  Vector or pointer to vector
+ * @param len   Number of bytes in vector
  */
-#define GLME_ENCODE_UINT64(enc, fno, elem)	\
-    GLME_ENCODE(enc, fno, elem, uint64, 0)
-  
-/**
- * Encode signed 64 bit integer.
- */
-#define GLME_ENCODE_INT64(enc, fno, elem)	\
-  GLME_ENCODE(enc, fno, elem, int64, 0)
+#define GLME_ENCODE_FLD_VECTOR(enc, elem, len)                \
+  do {                                                        \
+    __ne = (len) > 0 ? 1 : 0;                                 \
+    __e = glme_encode_field(enc, &__delta, GLME_VECTOR, 0,    \
+                            (elem), (len), __ne, (encoder)0); \
+    if (__e < 0) return __e;                                  \
+  } while (0)
 
 /**
- * Encode unsigned long integer.
+ * Encode structure that element points to.
+ *
+ * @param enc    Encode buffer
+ * @param typeid Structure type id
+ * @param elem   Structure pointer
+ * @param func   Encoding function for structure
  */
-#define GLME_ENCODE_ULONG(enc, fno, elem)	\
-    GLME_ENCODE(enc, fno, elem, ulong, 0)
-  
-/**
- * Encode signed long integer.
- */
-#define GLME_ENCODE_LONG(enc, fno, elem)	\
-  GLME_ENCODE(enc, fno, elem, long, 0)
-
-/**
- * Encode unsigned int.
- */
-#define GLME_ENCODE_UINT(enc, fno, elem)	\
-    GLME_ENCODE(enc, fno, elem, uint, 0)
-  
-/**
- * Encode signed integer.
- */
-#define GLME_ENCODE_INT(enc, fno, elem)	\
-  GLME_ENCODE(enc, fno, elem, int, 0)
+#define GLME_ENCODE_FLD_STRUCT(enc, typeid, elem, func)           \
+  do {                                                            \
+    __e = glme_encode_field(enc, &__delta, typeid, 0, (elem),     \
+                            0, sizeof((elem)[0]), func);          \
+    if (__e < 0) return __e;                                      \
+  } while (0)
 
 
+#if 0
 /**
- * Encode double precision 64 bit floating point number.
+ * Encode embedded structure.
+ *
+ * @param enc   Encode buffer
+ * @param fno   Field number (for error codes)
+ * @param elem  Embedded structure element
+ * @param func  Encoding function for structure
  */
-#define GLME_ENCODE_DOUBLE(enc, fno, elem)	\
-    GLME_ENCODE(enc, fno, elem, double, 0.0)
+#define GLME_ENCODE_FLD_STRUCT(enc, fno, elem, func)	 \
+  do {							 \
+    if (glme_encode_value_uint64(enc, &__delta) < 0)	 \
+      return -(10+fno);					 \
+    if ((*func)(enc, &(elem)) < 0)			 \
+      return -(10+fno);					 \
+    __delta = 1;					 \
+  } while (0)
+#endif
 
 /**
- * Encode single precision 32 bit floating point number.
+ * Encode array of signed integers.
+ *
+ * @param enc    Encode buffer
+ * @param fno    Field number
+ * @param elem   Source array
+ * @param len    Number of element in source
  */
-#define GLME_ENCODE_FLOAT(enc, fno, elem)	\
-    GLME_ENCODE(enc, fno, elem, float, 0.0)
+#define GLME_ENCODE_FLD_INT_ARRAY(enc, elem, len, vfunc)        \
+  do {								\
+      __e = glme_encode_field(enc, &__delta,                    \
+                              GLME_INT, GLME_F_ARRAY,           \
+                              (elem), (len), sizeof((elem)[0]), \
+                              (encoder)vfunc);                  \
+      if (__e < 0) return __e;                                  \
+  } while (0)
 
+#define GLME_ENCODE_FLD_INT_VECTOR(enc, elem, vfunc)            \
+  do {								\
+    __nl = sizeof(elem)/sizeof((elem)[0]);                      \
+    __e = glme_encode_field(enc, &__delta,                      \
+                            GLME_INT, GLME_F_ARRAY,             \
+                            (elem), __nl, sizeof((elem)[0]),    \
+                            (encoder)vfunc);                    \
+    if (__e < 0) return __e;                                    \
+  } while (0)
+
+
+/**
+ * Encode array of unsigned integers.
+ *
+ * @param enc    Encode buffer
+ * @param elem   Source array
+ * @param len    Number of element in source
+ */
+#define GLME_ENCODE_FLD_UINT_ARRAY(enc, elem, len, vfunc)	\
+  do {								\
+      __e = glme_encode_field(enc, &__delta,                    \
+                              GLME_UINT, GLME_F_ARRAY,          \
+                              (elem), (len), sizeof((elem)[0]), \
+                              (encoder)vfunc);                  \
+      if (__e < 0) return __e;                                  \
+  } while (0)
+
+#define GLME_ENCODE_FLD_UINT_VECTOR(enc, elem, vfunc)           \
+  do {								\
+    __nl = sizeof(elem)/sizeof((elem)[0]);                      \
+    __e = glme_encode_field(enc, &__delta,                      \
+                            GLME_UINT, GLME_F_ARRAY,           \
+                            (elem), __nl, sizeof((elem)[0]),    \
+                            (encoder)vfunc);                    \
+    if (__e < 0) return __e;                                    \
+  } while (0)
+
+/**
+ * Encode array of unsigned integers.
+ *
+ * @param enc    Encode buffer
+ * @param elem   Source array
+ * @param len    Number of element in source
+ */
+#define GLME_ENCODE_FLD_FLOAT_ARRAY(enc, elem, len, vfunc)	\
+  do {								\
+      __e = glme_encode_field(enc, &__delta,                    \
+                              GLME_FLOAT, GLME_F_ARRAY,        \
+                              (elem), (len), sizeof((elem)[0]), \
+                              (encoder)vfunc);                  \
+      if (__e < 0) return __e;                                  \
+  } while (0)
+
+#define GLME_ENCODE_FLD_FLOAT_VECTOR(enc, elem, vfunc)          \
+  do {								\
+    __nl = sizeof(elem)/sizeof((elem)[0]);                      \
+    __e = glme_encode_field(enc, &__delta,                      \
+                            GLME_FLOAT, GLME_F_ARRAY,           \
+                            (elem), __nl, sizeof((elem)[0]),    \
+                            (encoder)vfunc);                    \
+    if (__e < 0) return __e;                                    \
+  } while (0)
+
+
+/**
+ * Insert code for starting encoding header of an array field.
+ * If len is zero field is omitted and code between START_ARRAY and
+ * corresponding END_ARRAY is not executed.
+ */
+#define GLME_ENCODE_FLD_START_ARRAY(enc, tag, typeid, len)    \
+  do {                                                       \
+    if (len == 0) {                                          \
+      __delta++;                                             \
+      goto __empty_array_ ## tag;                            \
+    }                                                        \
+    if ((__e=glme_encode_value_uint(enc, &__delta)) < 0)     \
+      return __e;                                            \
+    if ((__e=glme_encode_array_start(enc, typeid, len)) < 0) \
+      return __e;                                            \
+  } while (0)
+
+/**
+ * Insert code to end array field encoding block. Matching START_ARRAY block
+ * is identified with tag value.
+ */
+#define GLME_ENCODE_FLD_END_ARRAY(enc, tag)   \
+  __delta = 1;                                \
+  __empty_array_ ## tag:                      \
+  // empty expression after label             \
+  do {} while (0)
 
 // ----------------------------------------------------------------------------
 // decode macros
 
 /**
- * Decode function stardard definitions
+ * Decoder standard definitions.
  */
-#define GLME_DECODE_STDDEF			\
-    int __n, __nc = 0;				\
-    uint64_t __delta;				\
-    int64_t __msgtype
+#define GLME_DECODE_STDDEF(dec)            \
+  int __e, __delta, __flg;                 \
+  size_t __len, __nl;                      \
+  uint64_t __at_start = (dec)->current
 
 /**
- * Decode function stardard ending
+ * Decode structure header.
+ *
+ * @param dec    Decode buffer
  */
-#define GLME_DECODE_END(enc)                    \
-    if (__delta != 0) return -4;                \
-    return __nc
+#define GLME_DECODE_STRUCT_START(dec)                   \
+  do {							\
+    if (glme_decode_start_struct(dec, &__delta) < 0)    \
+      return -1;					\
+  } while (0)
+  
+/**
+ * Decode end of structure marker.
+ */
+#define GLME_DECODE_STRUCT_END(dec)       \
+  do {                                    \
+    if (glme_decode_end_struct(dec) < 0)  \
+      return -4;			  \
+  } while (0)
 
-
-#define GLME_DECODE_END_OLD                     \
-    ready:					\
-    __n = glme_decode_end_struct(dec);		\
-    if (__n < 0) return -4;			\
-    __nc += __n;				\
-    return __nc
-
-#define GLME_DECODE(dec, fno, elem, typename, nullv)	\
-    do {						\
-      if (__delta == 1) {				\
-	__n = glme_decode_ ## typename(dec, elem);	\
-	  if (__n < 0) return -(fno+10);		\
-	  __nc += __n;					\
-	  __n = glme_decode_uint64(dec, &__delta);	\
-	  if (__n < 0) return -(fno+10);		\
-	  __nc += __n;					\
-      } else {						\
-	*(elem) = nullv;				\
-	if (__delta > 0 ) __delta -= 1;                 \
-      }							\
-    } while (0)
+#define GLME_DECODE_RETURN(dec) \
+    return (dec)->current - __at_start
 
 /**
- * Decode fixed size byte vector;
+ * Decode signed integer value.
+ *
+ * @param dec     Decode buffer
+ * @param elem    Element, must be proper LHS.
+ * @param defval  Default value. If field omitted from stream, element set to this value.
  */
-#define GLME_DECODE_VEC(dec, fno, vec, len)		\
-    do {                                                \
-        if (__delta == 1) {				\
-          __n = glme_decode_vec(dec, vec, len);       \
-          if (__n < 0) return -(fno+10);                \
-          __nc += __n;					\
-          __n = glme_decode_uint64(dec, &__delta);	\
-          if (__n < 0) return -(fno+10);                \
-          __nc += __n;					\
-        } else {                                        \
-          memset(vec, 0, len);				\
-          if (__delta > 0 ) __delta -= 1;               \
-        }                                               \
-    } while (0)
+#define GLME_DECODE_FLD_INT(dec, elem, defval)                     \
+  do {                                                             \
+    int64_t __t = (int64_t)(defval);                               \
+    __e = glme_decode_field(dec, &__delta, GLME_INT, 0, &__t,      \
+                            &__nl, 1, (decoder)glme_decode_int64); \
+    if (__e < 0) return __e;                                       \
+    (elem) = __t;                                                  \
+  } while(0)
+
+/**
+ * Decode unsigned integer value.
+ *
+ * @param dec     Decode buffer
+ * @param elem    Element, must be proper LHS.
+ * @param defval  Default value. If field omitted from stream, element set to this value.
+ */
+#define GLME_DECODE_FLD_UINT(dec, elem, defval)                     \
+  do {                                                              \
+    uint64_t __t = (uint64_t)(defval);                              \
+    __e = glme_decode_field(dec, &__delta, GLME_UINT, 0, &__t,      \
+                            &__nl, 1, (decoder)glme_decode_uint64); \
+    if (__e < 0) return __e;                                        \
+    (elem) = __t;                                                   \
+  } while(0)
+
+/**
+ * Decode floating point number value.
+ *
+ * @param dec     Decode buffer
+ * @param elem    Element, must be proper LHS.
+ * @param defval  Default value. If field omitted from stream, element set to this value.
+ */
+#define GLME_DECODE_FLD_DOUBLE(dec, elem, defval)                   \
+  do {                                                              \
+    double __f = (double)(defval);                                  \
+    __e = glme_decode_field(dec, &__delta, GLME_FLOAT, 0, &__f,     \
+                            &__nl, 1, (decoder)glme_decode_double); \
+    if (__e < 0) return __e;                                          \
+    (elem) = __f;                                                     \
+  } while(0)
+
+/**
+ * Decode fixed size byte array
+ *
+ * @param dec     Decode buffer
+ * @param elem    Element array of type char[]
+ */
+#define GLME_DECODE_FLD_VECTOR(dec, elem)                           \
+  do {                                                              \
+    void *__ptr = &(elem); __nl = sizeof(elem)/sizeof((elem)[0]);   \
+    memset((elem), 0, sizeof(elem));                                \
+    __e = glme_decode_field(dec, &__delta, GLME_VECTOR, 0,          \
+                          __ptr, &__nl, 1, (decoder)0);             \
+    if (__e < 0) return __e;                                        \
+  } while(0)
+
+/**
+ * Decode variable string
+ *
+ * @param dec     Decode buffer
+ * @param elem    Element, string pointer
+ */
+#define GLME_DECODE_FLD_STRING(dec, elem)                           \
+  do {                                                              \
+    void *__ptr = &(elem); __nl = 0;                                \
+    (elem) = (char *)0;                                             \
+    __e = glme_decode_field(dec, &__delta, GLME_STRING, 0,          \
+                            &(elem), &__nl, 1, (decoder)0);         \
+    if (__e < 0) return __e;                                        \
+  } while(0)
 
 
 /**
- * Decode variable size byte vector, allocates space for data;
+ * Decode structure to a pointer field.
+ *
+ * @param dec     Decode buffer
+ * @param typeid  Structure type id
+ * @param elem    Element, structure pointer
+ * @param func    Decode function
  */
-#define GLME_DECODE_BYTES(dec, fno, ptr)		\
-    do {                                                \
-        if (__delta == 1) {				\
-          __n = glme_decode_bytes(dec, ptr);       \
-          if (__n < 0) return -(fno+10);                \
-          __nc += __n;					\
-          __n = glme_decode_uint64(dec, &__delta);	\
-          if (__n < 0) return -(fno+10);                \
-          __nc += __n;					\
-        } else {                                        \
-          *(ptr) = (void *)0;                           \
-          if (__delta > 0 ) __delta -= 1;               \
-        }                                               \
-    } while (0)
-
+#define GLME_DECODE_FLD_STRUCT_PTR(dec, typeid, elem, func)             \
+  do {                                                                  \
+    (elem) = (void *)0;                                                 \
+    __e = glme_decode_field(dec, &__delta, typeid, GLME_F_PTR, &(elem), \
+                            0, sizeof((elem)[0]), (decoder)func);       \
+    if (__e < 0) return __e;                                            \
+  } while (0)
 
 /**
- * Decode string; 
+ * Decode structure to an embedded structure field.
+ *
+ * @param dec     Decode buffer
+ * @param typeid  Structure type id
+ * @param elem    Element
+ * @param func    Decode function
  */
-#define GLME_DECODE_STR(dec, fno, vec)			\
-    do {						\
-      if (__delta == 1) {				\
-	__n = glme_decode_string(dec, vec);		\
-	if (__n < 0) return -(fno+10);			\
-	__nc += __n;					\
-	__n = glme_decode_uint64(dec, &__delta);	\
-	if (__n < 0) return -(fno+10);			\
-	__nc += __n;					\
-      } else {						\
-	*(vec) = (char *)0;				\
-	if (__delta > 0) __delta -= 1;			\
-      }							\
-    } while (0)
-
-
-/**
- * Decode and verify type id.
- */
-#define GLME_DECODE_TYPE(dec, typeid)		\
-    do {					\
-      __n = glme_decode_int64(dec, &__msgtype);	\
-      if (__n < 0) return -1;			\
-      if (__msgtype != typeid) return -2;	\
-      __nc += __n;				\
-    } while (0)
-
-/**
- * Setup initial value for field delta.
- */
-#define GLME_DECODE_DELTA(dec)                \
-  do {                                        \
-    __n = glme_decode_uint64(dec, &__delta);  \
-    if (__n < 0) return -3;                   \
-    __nc += __n;                              \
+#define GLME_DECODE_FLD_STRUCT(dec, typeid, elem, func)         \
+  do {                                                          \
+    memset(&(elem), 0, sizeof(elem));                           \
+    __e = glme_decode_field(dec, &__delta, typeid, 0, &(elem),  \
+                            0, sizeof(elem), (decoder)func);    \
+    if (__e < 0) return __e;                                    \
   } while (0)
 
 
+/**
+ * Decode array of signed integers.
+ *
+ * @param dec    Decode buffer
+ * @param elem   Target field, must be proper lvalue
+ * @param len    Decoded array length (must be lvalue)
+ * @param func   Array element value decoder
+ */
+#define GLME_DECODE_FLD_INT_ARRAY(dec, elem, len, func)                 \
+  do {                                                                  \
+    __flg = GLME_F_ARRAY|GLME_F_PTR; (len) =  0;                        \
+    __e = glme_decode_field(dec, &__delta, GLME_INT, __flg, &(elem),    \
+                            &(len), sizeof((elem)[0]), (decoder)func);  \
+    if (__e < 0) return __e;                                            \
+  } while (0)
+
 
 /**
- * Expand code to decode fixed size array.
+ * Decode fixed size array of signed integers
  *
- * @param dec     Decoder
- * @param fno     Field number
- * @param vec     Array pointer
- * @param len     Fixed array length
- * @param gname   Basic GLME decoder type
- *
- * Parameter gname is used to generate decoder function name in the
- * form 'glme_decode_<gname>'.
+ * @param dec    Decode buffer
+ * @param elem   Fixed size target array
+ * @param len    Target array length
+ * @param func   Array element value decoder
  */
-#define GLME_DECODE_ARRAY(dec, fno, vec, len, gname)         \
-    do {                                                        \
-      if (__delta == 1) {                                       \
-        int __k;                                                \
-        uint64_t __alen;                                        \
-        __n = glme_decode_uint64(dec, &__alen);                 \
-        if (__n < 0) return -(fno+10);                          \
-        __nc += __n;                                            \
-        for (__k = 0; __k < len; __k++) {                       \
-          __n = glme_decode_ ## gname(dec, &(vec)[__k]);        \
-          if (__n < 0) return -(fno+10);                        \
-          __nc += __n;                                          \
-        }                                                       \
-	__n = glme_decode_uint64(dec, &__delta);                \
-	if (__n < 0) return -(fno+10);	                        \
-	__nc += __n;				                \
-      } else {                                                  \
-        memset((vec), 0, (len)*sizeof(*(vec)));                 \
-        if (__delta > 0) __delta -= 1;                          \
-      }                                                         \
+#define GLME_DECODE_FLD_INT_VECTOR(dec, elem, func)                 \
+  do {                                                              \
+    void *__ptr = &(elem); __nl = sizeof(elem)/sizeof((elem)[0]);   \
+    memset((elem), 0, sizeof(elem));                                \
+    __e = glme_decode_field(dec, &__delta, GLME_INT, GLME_F_ARRAY,  \
+                            &(elem), &__nl, sizeof((elem)[0]),      \
+                            (decoder)func);                         \
+    if (__e < 0) return __e;                                        \
+  } while (0)
+
+
+/**
+ * Decode array of unsigned integers.
+ *
+ * @param dec    Decode buffer
+ * @param elem   Target field, must be proper lvalue
+ * @param len    Decoded array length (must be lvalue)
+ * @param func   Array element value decoder
+ */
+#define GLME_DECODE_FLD_UINT_ARRAY(dec, elem, len, func)                \
+  do {                                                                  \
+    __flg = GLME_F_ARRAY|GLME_F_PTR; (len) =  0;                        \
+    __e = glme_decode_field(dec, &__delta, GLME_UINT, __flg, &(elem),   \
+                            &(len), sizeof((elem)[0]), (decoder)func);  \
+    if (__e < 0) return __e;                                            \
+  } while (0)
+
+/**
+ * Decode fixed size array of unsigned integers
+ *
+ * @param dec    Decode buffer
+ * @param elem   Fixed size target array
+ * @param len    Target array length
+ * @param func   Array element value decoder
+ */
+#define GLME_DECODE_FLD_UINT_VECTOR(dec, elem, func)                \
+  do {                                                              \
+    void *__ptr = &(elem); __nl = sizeof(elem)/sizeof((elem)[0]);   \
+    memset((elem), 0, sizeof(elem));                                \
+    __e = glme_decode_field(dec, &__delta, GLME_UINT, GLME_F_ARRAY, \
+                            &(elem), &__nl, sizeof((elem)[0]),      \
+                            (decoder)func);                         \
+    if (__e < 0) return __e;                                        \
+  } while (0)
+
+/**
+ * Decode array of floating point numbers.
+ *
+ * @param dec    Decode buffer
+ * @param elem   Target field, must be proper lvalue (pointer)
+ * @param len    Decoded array length (must be lvalue)
+ * @param func   Array element value decoder
+ */
+#define GLME_DECODE_FLD_FLOAT_ARRAY(dec, elem, len, func)              \
+  do {                                                                 \
+    __flg = GLME_F_ARRAY|GLME_F_PTR; (len) =  0;                       \
+    __e = glme_decode_field(dec, &__delta, GLME_FLOAT, __flg, &(elem), \
+                            &(len), sizeof((elem)[0]), (decoder)func); \
+    if (__e < 0) return __e;                                           \
+  } while (0)
+
+/**
+ * Decode fixed size array of floating point numbers.
+ *
+ * @param dec    Decode buffer
+ * @param elem   Fixed size target array
+ * @param func   Array element value decoder
+ */
+#define GLME_DECODE_FLD_FLOAT_VECTOR(dec, elem, func)                  \
+  do {                                                                 \
+    void *__ptr = &(elem)[0]; __nl = sizeof(elem)/sizeof((elem)[0]);   \
+    memset((elem), 0, sizeof(elem));                                   \
+    __e = glme_decode_field(dec, &__delta, GLME_FLOAT, GLME_F_ARRAY,   \
+                            &__ptr, &__nl, sizeof((elem)[0]),          \
+                            (decoder)func);                            \
+    if (__e < 0) return __e;                                           \
+  } while (0)
+
+/**
+ * Insert start of array field code. Code between this and matching
+ * END_ARRAY macros is not executed if actual array length is zero
+ * and array is omitted from encoded stream.
+ */
+#define GLME_DECODE_FLD_START_ARRAY(dec, id, typeid, len)	\
+    do {							\
+      int __typ; size_t __alen;					\
+      if (__delta != 1) {					\
+        if (__delta > 0) __delta--;				\
+	(len) = 0;						\
+	goto __skip_array_ ## fno;				\
+      }								\
+      __e = glme_decode_value_uint(dec, &__delta);              \
+      if (__e < 0) return __e;                                  \
+      __e = glme_decode_array_start(dec, &__typ, &__alen);	\
+      if (__e < 0) return __e;                                  \
+      if (__typ != typeid)					\
+	return -4;                                              \
+      (len) = __alen;						\
     } while (0)
 
-
 /**
- * Expand code to decode variable size array.
- *
- * @param dec     Decoder
- * @param fno     Field number
- * @param vec     Array pointer
- * @param len     Variable to receive array length
- * @param gname   Basic GLME decoder type
- * @param ctype   C type
- *
- * Parameter gname is used to generate decoder function name in the
- * form 'glme_decode_<gname>'.
+ * Insert end of array field code.
  */
-#define GLME_DECODE_VAR_ARRAY(dec, fno, vec, len, gname, ctype)       \
-    do {                                                        \
-      if (__delta == 1) {                                       \
-        int __k;                                                \
-        uint64_t __alen;                                        \
-        ctype *__vptr;                                          \
-        __n = glme_decode_uint64(dec, &__alen);                 \
-        if (__n < 0) return -(fno+10);                          \
-        __nc += __n;                                            \
-        __vptr = (ctype *)malloc(__alen*sizeof(ctype));         \
-        if (! __vptr) return -(fno+10);                         \
-        for (__k = 0; __k < __alen; __k++) {                    \
-          __n = glme_decode_ ## gname(dec, &__vptr[__k]);       \
-          if (__n < 0) {free(__vptr); return -(fno+10);}        \
-          __nc += __n;                                          \
-        }                                                       \
-	__n = glme_decode_uint64(dec, &__delta);                \
-	if (__n < 0) {free(__vptr); return -(fno+10);}          \
-        vec = __vptr;                                           \
-        len = __alen;                                           \
-	__nc += __n;				                \
-      } else {                                                  \
-        len = 0;                                                \
-        vec = (ctype *)0;                                       \
-        if (__delta > 0) __delta -= 1;                          \
-      }                                                         \
-    } while (0)
-
-
-/**
- * Decode embedded struct
- *
- * @param dec   Decoder
- * @param fno   Field number
- * @param elem  Pointer to struct element
- * @param func  Decoder function
- *
- * Decoder function is of type int (*func)(glme_buf_t *, struct <x> *);
- */
-#define GLME_DECODE_STRUCT(dec, fno, elem, func)	\
-   do {                                                 \
-      if (__delta == 1) {                               \
-        __n = (*func) (dec, elem);                      \
-        if (__n < 0) return -(fno+10);                  \
-        __nc += __n;					\
-        __n = glme_decode_uint64(dec, &__delta);        \
-        if (__n < 0) return -(fno+10);                  \
-        __nc += __n;                                    \
-      } else {                                          \
-        memset(elem, 0, sizeof(*(elem)));               \
-        if (__delta > 0) __delta -= 1;                  \
-      }                                                 \
-   } while (0)
-
-/**
- * Decode struct pointer;
- *
- * @param dec   Decoder
- * @param fno   Field number
- * @param elem  Pointer to struct element
- * @param func  Decoder function for struct type;
- * @param stype C type name for structure type
- *
- * Decoder function is of type int (*func)(glme_buf_t *, stype *);
- */
-#define GLME_DECODE_STRUCT_PTR(dec, fno, elem, func, stype)	\
-      do {                                                      \
-          if (__delta == 1) {                                   \
-            stype *__sptr = (stype *)malloc(sizeof(stype));     \
-            if (! __sptr) return -(fno+10);                     \
-            __n = (*func) (dec, __sptr);                        \
-            if (__n < 0) { free(__sptr); return -(fno+10);}     \
-            __nc += __n;					\
-            __n = glme_decode_uint64(dec, &__delta);            \
-            if (__n < 0) { free(__sptr); return -(fno+10);}     \
-            __nc += __n;                                        \
-            elem = __sptr;                                      \
-          } else {                                              \
-            elem = (stype *)0;                                  \
-            if (__delta > 0) __delta -= 1;                      \
-          }                                                     \
-      } while (0)
-
-/**
- * Expand code to decode variable size arbitrary type array.
- *
- * @param dec       Decoder
- * @param fno       Field number
- * @param vec       Pointer to structure array
- * @param len       Variable to receive array length
- * @param func      Element decoder function
- * @param stype     Element C type
- *
- * Decoder function is of type int (*func)(glme_buf_t *, stype *);
- */
-#define GLME_DECODE_ANY_ARRAY(dec, fno, vec, len, func, ctype)  \
-    do {                                                        \
-      if (__delta == 1) {                                       \
-        int __k;                                                \
-        uint64_t __alen;                                        \
-        ctype *__vptr;                                          \
-        __n = glme_decode_uint64(dec, &__alen);                 \
-        if (__n < 0) return -(fno+10);                          \
-        __nc += __n;                                            \
-        __vptr = (ctype *)malloc(__alen*sizeof(ctype));         \
-        if (! __vptr) return -(fno+10);                         \
-        for (__k = 0; __k < __alen; __k++) {                    \
-          __n = (*func)(dec, &__vptr[__k]);                     \
-          if (__n < 0) {free(__vptr); return -(fno+10);}        \
-          __nc += __n;                                          \
-        }                                                       \
-	__n = glme_decode_uint64(dec, &__delta);                \
-	if (__n < 0) {free(__vptr); return -(fno+10);}          \
-        vec = __vptr;                                           \
-        len = __alen;                                           \
-	__nc += __n;				                \
-      } else {                                                  \
-        len = 0;                                                \
-        vec = (ctype *)0;                                       \
-        if (__delta > 0) __delta -= 1;                          \
-      }                                                         \
-    } while (0)
-
-
-/**
- * Decode start of array from stream.
- *
- * Parameter len set to array length if array encoded in the stream.
- * If array is omitted from the stream then code between START_ARRAY 
- * and END_ARRAY macros is not executed.
- */
-#define GLME_DECODE_START_ARRAY(dec, fno, len)                  \
-        do {                                                    \
-          uint64_t __alen;                                      \
-          __skip_array = 0;                                     \
-          if ( __delta != 1 ) {                                 \
-            __skip_array = 1;                                   \
-            goto __end_array_ ## fno;                           \
-          }                                                     \
-          __n = glme_decode_uint64(dec, &__alen);               \
-          if (__n < 0) return -(fno+10);                        \
-          __nc += __n;                                          \
-          len = __alen;                                         \
-        } while (0)
-
-/**
- * Insert END_ARRAY handling code for matching START_ARRAY macro.
- */
-#define GLME_DECODE_END_ARRAY(dec, fno)                       \
-      do {                                                      \
-      __n = glme_decode_uint64(dec, &__delta);                  \
-      if (__n < 0) {return -(fno+10);}                          \
-      __nc += __n;                                              \
-      __end_array_ ## fno:                                      \
-      if ( __skip_array == 1 ) {                                \
-        if (__delta > 0) __delta -= 1;                          \
-      }                                                         \
-      } while (0)
-      
-  
-/**
- * Decode unsigned 64 bit integer
- */
-#define GLME_DECODE_UINT64(dec, fno, elem)      \
-    GLME_DECODE(dec, fno, elem, uint64, 0)
-
-/**
- * Decode signed 64 bit integer
- */
-#define GLME_DECODE_INT64(dec, fno, elem)       \
-      GLME_DECODE(dec, fno, elem, int64, 0)
-
-/**
- * Decode unsigned long integer
- */
-#define GLME_DECODE_ULONG(dec, fno, elem)      \
-    GLME_DECODE(dec, fno, elem, ulong, 0)
-
-/**
- * Decode signed long integer
- */
-#define GLME_DECODE_LONG(dec, fno, elem)       \
-      GLME_DECODE(dec, fno, elem, long, 0)
-
-/**
- * Decode unsigned integer
- */
-#define GLME_DECODE_UINT(dec, fno, elem)      \
-    GLME_DECODE(dec, fno, elem, uint, 0)
-
-/**
- * Decode signed integer
- */
-#define GLME_DECODE_INT(dec, fno, elem)       \
-      GLME_DECODE(dec, fno, elem, int, 0)
-
-
-/**
- * Decode double precision 64 bit floating point number
- */
-#define GLME_DECODE_DOUBLE(dec, fno, elem)      \
-      GLME_DECODE(dec, fno, elem, double, 0.0)
-
-/**
- * Decode single precision 64 bit floating point number
- */
-#define GLME_DECODE_FLOAT(dec, fno, elem)      \
-      GLME_DECODE(dec, fno, elem, float, 0.0)
+#define GLME_DECODE_FLD_END_ARRAY(dec, id)          \
+    __skip_array_ ## fno:			     \
+    // empty expression after label                  \
+    do {} while (0)
+    
 
 
 #ifdef __cplusplus
