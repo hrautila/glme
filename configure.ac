@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([Gob Like Message Encoding], [0.1], [],
-	[libglme], [https://github.com/hrautila/libglme])
+AC_INIT([Gob Like Message Encoding], [0.2], [],
+	[libglme], [https://github.com/hrautila/glme])
 
 AM_INIT_AUTOMAKE
 AC_CONFIG_SRCDIR([src/Makefile.am])
