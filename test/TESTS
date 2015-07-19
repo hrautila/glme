@@ -1,0 +1,28 @@
+
+t01.c : Simple typed variables
+t02.c : Error in simple typed variable decoding
+t03.c : Simple untyped values
+t04.c : Simple untyped values, improper decoding but no error.
+t05.c : Bytes vectors and strings with encoded type information.
+t06.c : Byte vectors and array values.
+t07.c : Integer arrays, no size checking
+t08.c : Structures without helper macros
+t09.c : Structure arrays without helper functions
+t10.c :	Recursive data structure without helper macros
+t11.c :	Data structure iterativelly without helper macros
+t12.c :	Acyclic data structure recursively with helper macros.
+t13.c :	An array field in Structure with helper macros
+t14.c :	Special encoding/decoding of array field in structure (partial send)
+t15.c :	Acyclic data structure iteratively with helper macros.
+t16.c :	Cyclic data structure recursively with helper macros.
+t17.c : Structures without helper macros
+t18.c : Structures with helper macros
+t19.c : Fixed size vector with in structure from process to process 
+t20.c : Variable size vector with in structure from process to process 
+t21.c : Structure with embedded structures from process to process
+t22.c : Linked list from process to process
+
+
+
+
+

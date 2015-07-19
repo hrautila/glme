@@ -40,23 +40,25 @@ void dataprint(data_t *a)
 
 #define MSG_DATA_ID 32
 
-int glme_encode_data_t(glme_buf_t *enc, data_t *msg, int typeid)
+int encode_data_t(glme_buf_t *enc, const void *ptr)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, typeid);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_ARRAY(enc, 0, msg->vec, msg->vlen, double);
-  GLME_ENCODE_END(enc);
+  const data_t *msg = (const data_t *)ptr;
+  GLME_ENCODE_STDDEF(enc);
+  GLME_ENCODE_STRUCT_START(enc);
+  GLME_ENCODE_FLD_FLOAT_ARRAY(enc, msg->vec, msg->vlen, glme_encode_value_double);
+  GLME_ENCODE_STRUCT_END(enc);
+  GLME_ENCODE_RETURN(enc);
 }
 
 
-int glme_decode_data_t(glme_buf_t *dec, data_t *msg, int typeid)
+int decode_data_t(glme_buf_t *dec, void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, typeid);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_VAR_ARRAY(dec, 0, msg->vec, msg->vlen, double, double);
-  GLME_DECODE_END(dec);
+  data_t *msg = (data_t *)ptr;
+  GLME_DECODE_STDDEF(dec);
+  GLME_DECODE_STRUCT_START(dec);
+  GLME_DECODE_FLD_FLOAT_ARRAY(dec, msg->vec, msg->vlen, glme_decode_value_double);
+  GLME_DECODE_STRUCT_END(dec);
+  GLME_DECODE_RETURN(dec);
 }
 
 
@@ -95,7 +97,7 @@ int main(int argc, char **argv)
 
   //dataprint(&msg);
   if (argc > 3) {
-    glme_encode_data_t(&encoder, &msg, MSG_DATA_ID);
+    glme_encode_struct(&encoder, MSG_DATA_ID, &msg, encode_data_t);
     glme_buf_writem(&encoder, 1);
     exit(0);
   }
@@ -114,7 +116,7 @@ int main(int argc, char **argv)
     // encoder in child
     close(pipefd[0]);
 
-    glme_encode_data_t(&encoder, &msg, MSG_DATA_ID);
+    glme_encode_struct(&encoder, MSG_DATA_ID, &msg, encode_data_t);
     glme_buf_writem(&encoder, pipefd[1]);
     close(pipefd[1]);
     exit(0);
@@ -123,7 +125,7 @@ int main(int argc, char **argv)
     close(pipefd[1]);
 
     n = glme_buf_readm(&decoder, pipefd[0], MMAX);
-    n = glme_decode_data_t(&decoder, &rcv, MSG_DATA_ID);
+    n = glme_decode_struct(&decoder, MSG_DATA_ID, &rcv, decode_data_t);
     if (n < 0) {
       fprintf(stderr, "decode_error... %d\n", n);
     }

@@ -5,6 +5,8 @@
 
 #include "glme.h"
 
+// Transmitting structure from process to process 
+
 #define MMAX (1 << 24)
 
 typedef struct data_t {
@@ -21,25 +23,37 @@ int datacmp(data_t *a, data_t *b)
   return 0;
 }
 
+
+void dataprint(data_t *a, data_t *b)
+{
+  int k;
+  for (k = 0; k < 16; k++) {
+    fprintf(stderr, "%2d: %.4f  %.4f\n", k, a->vec[k], b->vec[k]);
+  }
+}
+
 #define MSG_DATA_ID 32
 
-int glme_encode_data_t(glme_buf_t *enc, data_t *msg, int typeid)
+int encode_data_t(glme_buf_t *enc, const void *ptr)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, typeid);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_ARRAY(enc, 0, msg->vec, 16, double);
-  GLME_ENCODE_END(enc);
+  const data_t *msg = (const data_t *)ptr;
+  GLME_ENCODE_STDDEF(enc);
+  GLME_ENCODE_STRUCT_START(enc);
+  GLME_ENCODE_FLD_FLOAT_VECTOR(enc, msg->vec, glme_encode_value_double);
+  GLME_ENCODE_STRUCT_END(enc);
+  GLME_ENCODE_RETURN(enc);
 }
 
 
-int glme_decode_data_t(glme_buf_t *dec, data_t *msg, int typeid)
+int decode_data_t(glme_buf_t *dec, void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, typeid);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_ARRAY(dec, 0, msg->vec, 16, double);
-  GLME_DECODE_END(dec);
+  data_t *msg = (data_t *)ptr;
+  GLME_DECODE_STDDEF(dec);
+  GLME_DECODE_STRUCT_START(dec);
+  // must use _VECTOR version as vec is not a pointer
+  GLME_DECODE_FLD_FLOAT_VECTOR(dec, msg->vec, glme_decode_value_double);
+  GLME_DECODE_STRUCT_END(dec);
+  GLME_DECODE_RETURN(dec);
 }
 
 
@@ -69,7 +83,7 @@ int main(int argc, char **argv)
   }
 
   if (argc > 2) {
-    glme_encode_data_t(&encoder, &msg, MSG_DATA_ID);
+    glme_encode_struct(&encoder, MSG_DATA_ID, &msg, encode_data_t);
     glme_buf_writem(&encoder, 1);
     exit(0);
   }
@@ -87,7 +101,7 @@ int main(int argc, char **argv)
     // encoder in child
     close(pipefd[0]);
 
-    glme_encode_data_t(&encoder, &msg, MSG_DATA_ID);
+    glme_encode_struct(&encoder, MSG_DATA_ID, &msg, encode_data_t);
     glme_buf_writem(&encoder, pipefd[1]);
     close(pipefd[1]);
     exit(0);
@@ -96,14 +110,16 @@ int main(int argc, char **argv)
     close(pipefd[1]);
 
     n = glme_buf_readm(&decoder, pipefd[0], MMAX);
-    n = glme_decode_data_t(&decoder, &rcv, MSG_DATA_ID);
+    n = glme_decode_struct(&decoder, MSG_DATA_ID, &rcv, decode_data_t);
     if (n < 0) {
       printf("decode_error... %d\n", n);
     }
     close(pipefd[0]);
+    kill(cpid);
     wait(NULL);
   }
   n = datacmp(&msg, &rcv);
   printf("decoded == encoded: %s\n", n == 0 ? "YES" : "NO");
+  dataprint(&msg, &rcv);
   exit(n);
 }

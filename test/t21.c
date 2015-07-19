@@ -5,6 +5,8 @@
 
 #include "glme.h"
 
+// Structure with embedded structures from process to process
+
 #define MSG_DATA_ID 32
 #define MSG_RECT_ID 33
 
@@ -31,28 +33,30 @@ int rectcmp(rect_t *a, rect_t *b)
   return 0;
 }
 
-int glme_encode_rect_t(glme_buf_t *enc, rect_t *rc)
+int encode_rect_t(glme_buf_t *enc, const void *ptr)
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_RECT_ID);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_INT64(enc, 0, rc->x0);
-  GLME_ENCODE_INT64(enc, 1, rc->x1);
-  GLME_ENCODE_INT64(enc, 2, rc->y0);
-  GLME_ENCODE_INT64(enc, 3, rc->y1);
-  GLME_ENCODE_END(enc);
+  const rect_t *rc = (const rect_t *)ptr;
+  GLME_ENCODE_STDDEF(enc);
+  GLME_ENCODE_STRUCT_START(enc);
+  GLME_ENCODE_FLD_INT(enc, rc->x0, 0);
+  GLME_ENCODE_FLD_INT(enc, rc->x1, 0);
+  GLME_ENCODE_FLD_INT(enc, rc->y0, 0);
+  GLME_ENCODE_FLD_INT(enc, rc->y1, 0);
+  GLME_ENCODE_STRUCT_END(enc);
+  GLME_ENCODE_RETURN(enc);
 }
 
-int glme_decode_rect_t(glme_buf_t *dec, rect_t *rc)
+int decode_rect_t(glme_buf_t *dec, void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_RECT_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_INT64(dec, 0, &rc->x0);
-  GLME_DECODE_INT64(dec, 1, &rc->x1);
-  GLME_DECODE_INT64(dec, 2, &rc->y0);
-  GLME_DECODE_INT64(dec, 3, &rc->y1);
-  GLME_DECODE_END(dec);
+  rect_t *rc = (rect_t *)ptr;
+  GLME_DECODE_STDDEF(dec);
+  GLME_DECODE_STRUCT_START(dec);
+  GLME_DECODE_FLD_INT(dec, rc->x0, 0);
+  GLME_DECODE_FLD_INT(dec, rc->x1, 0);
+  GLME_DECODE_FLD_INT(dec, rc->y0, 0);
+  GLME_DECODE_FLD_INT(dec, rc->y1, 0);
+  GLME_DECODE_STRUCT_END(dec);
+  GLME_DECODE_RETURN(dec);
 }
 
 
@@ -72,27 +76,29 @@ int datacmp(data_t *a, data_t *b)
   return rectcmp(&a->shape, &b->shape);
 }
 
-int glme_encode_data_t(glme_buf_t *enc, data_t *msg)
+int encode_data_t(glme_buf_t *enc, const void *ptr) 
 {
-  GLME_ENCODE_STDDEF;
-  GLME_ENCODE_TYPE(enc, MSG_DATA_ID);
-  GLME_ENCODE_DELTA(enc);
-  GLME_ENCODE_DOUBLE(enc, 0, msg->r);
-  GLME_ENCODE_STRUCT(enc, 1, &msg->shape, glme_encode_rect_t);
-  GLME_ENCODE_UINT64(enc, 2, msg->a);
-  GLME_ENCODE_END(enc);
+  const data_t *msg = (const data_t *)ptr;
+  GLME_ENCODE_STDDEF(enc);
+  GLME_ENCODE_STRUCT_START(enc);
+  GLME_ENCODE_FLD_DOUBLE(enc, msg->r, 0.0);
+  GLME_ENCODE_FLD_STRUCT(enc, MSG_RECT_ID, &msg->shape, encode_rect_t);
+  GLME_ENCODE_FLD_UINT(enc, msg->a, 0);
+  GLME_ENCODE_STRUCT_END(enc);
+  GLME_ENCODE_RETURN(enc);
 }
 
 
-int glme_decode_data_t(glme_buf_t *dec, data_t *msg)
+int decode_data_t(glme_buf_t *dec, void *ptr)
 {
-  GLME_DECODE_STDDEF;
-  GLME_DECODE_TYPE(dec, MSG_DATA_ID);
-  GLME_DECODE_DELTA(dec);
-  GLME_DECODE_DOUBLE(dec, 0, &msg->r);
-  GLME_DECODE_STRUCT(dec, 1, &msg->shape, glme_decode_rect_t);
-  GLME_DECODE_UINT64(dec, 2, &msg->a);
-  GLME_DECODE_END(dec);
+  data_t *msg = (data_t *)ptr;
+  GLME_DECODE_STDDEF(dec);
+  GLME_DECODE_STRUCT_START(dec);
+  GLME_DECODE_FLD_DOUBLE(dec, msg->r, 0.0);
+  GLME_DECODE_FLD_STRUCT(dec, MSG_RECT_ID, msg->shape, decode_rect_t);
+  GLME_DECODE_FLD_UINT(dec, msg->a, 0);
+  GLME_DECODE_STRUCT_END(dec);
+  GLME_DECODE_RETURN(dec);
 }
 
 void printdata(data_t *t)
@@ -135,7 +141,7 @@ int main(int argc, char **argv)
 
   //dataprint(&msg);
   if (argc > 2) {
-    glme_encode_data_t(&encoder, &msg);
+    glme_encode_struct(&encoder, MSG_DATA_ID, &msg, encode_data_t);
     glme_buf_writem(&encoder, 1);
     exit(0);
   }
@@ -154,7 +160,7 @@ int main(int argc, char **argv)
     // encoder in child
     close(pipefd[0]);
 
-    glme_encode_data_t(&encoder, &msg);
+    glme_encode_struct(&encoder, MSG_DATA_ID, &msg, encode_data_t);
     glme_buf_writem(&encoder, pipefd[1]);
     close(pipefd[1]);
     exit(0);
@@ -163,7 +169,7 @@ int main(int argc, char **argv)
     close(pipefd[1]);
 
     n = glme_buf_readm(&decoder, pipefd[0], MMAX);
-    n = glme_decode_data_t(&decoder, &rcv);
+    n = glme_decode_struct(&decoder, MSG_DATA_ID, &rcv, decode_data_t);
     if (n < 0) {
       fprintf(stderr, "decode_error... %d\n", n);
     }
