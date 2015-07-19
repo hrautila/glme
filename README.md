@@ -1,24 +1,14 @@
 
-## GLME - Gob Like Message Encoding
+## GLME - A Binary Gob Like Message Encoding
 
-GLME is library for descriping messages as C-structures, encoding them to binary format
-and decoding the transmitted values from the binary byte stream. The binary format is
-based on the GOB encoding and its predefined types. Encoded messages are not
-self-descriping. Messages are sent as a pair (LENGTH, STRUCT). LENGTH is the length,
-in bytes, of the encoded struct stream. The STRUCT is a pair (ID, FIELDS) where ID
-is a signed integer uniquely identifying the struct type. The FIELDS element is a
-sequence of (delta, value) pairs. Each value is sent using the standard encoding for
-its type, If a field has the zero value for its type, it is omitted from the transmission.
-Delta is the index offset from the previous structure field to this field. If delta is
-greater than one fields have been omitted from the encoded stream. End of the type is
-indicated with zero delta value.
+GLME encoded stream is an adapted GOB stream where each data element is preceded by its type,
+expressed in terms of small set of predefined types. Pointers are not encoded, but the things
+they point to are. Compound types (structures) are identified by user selected unique positive
+numbers. See file ENCODING for more information and examples in test directory.
 
-Messages are descripted as standard C structures. Message or structure type spesific
-encoding and decoding functions are written with GLME helper macros. Fields may be
-basic C-types - signed or unsigned ints, single or double precision floating point
-numbers, fixed size vectors, variable size strings, arrays of base types, embedded
-structs, pointers to structs or non-cyclic data structures (like linked list,
-binary trees). 
+Library supports encoding all basic types, strings, byte arrays, arrays of basic types,
+structure, arrays of structures, acyclic data structures (like linked list) and to some
+extend also cyclic data structures (like double linked list).
 
 ## Using
 
@@ -53,30 +43,32 @@ error code indicates error.
    #include <glme.h>
 
    // message encoding function
-   int msg_encoder(glme_buf_t *enc, msg_t *m)
+   int msg_encoder(glme_buf_t *enc, const void *p)
    {
-     GLME_ENCODE_STDDEF;
-     GLME_ENCODE_TYPE(enc, MSG_ID);
-     GLME_ENCODE_DELTA(enc);
-     GLME_ENCODE_UINT(enc, 0, m->ui);
-     GLME_ENCODE_INT(enc, 1, m->i);
-     GLME_ENCODE_DOUBLE(enc, 2, m->r);
-     GLME_ENCODE_VEC(enc, 3, m->vec, sizeof(m->vec));
-     GLME_ENCODE_STR(enc, 4, m->ptr);
-     GLME_ENCODE_END(enc);
+     const msg_t *m = (const msg_t *)p;
+     GLME_ENCODE_STDDEF(enc);
+     GLME_ENCODE_STRUCT_START(enc);
+     GLME_ENCODE_FLD_UINT(enc, m->ui, 0);
+     GLME_ENCODE_FLD_INT(enc, m->i, 0);
+     GLME_ENCODE_FLD_DOUBLE(enc, m->r, 0.0);
+     GLME_ENCODE_FLD_VECTOR(enc, m->vec, sizeof(m->vec));
+     GLME_ENCODE_FLD_STRING(enc, m->ptr);
+     GLME_ENCODE_STRUCT_END(enc);
+     GLME_ENCODE_RETURN(enc);     
    }
 
-   int msg_decoder(glme_buf_t *dec, msg_t *m)
+   int msg_decoder(glme_buf_t *dec, void *p)
    {
-     GLME_DECODE_STDDEF;
-     GLME_DECODE_TYPE(dec, MSG_ID);
-     GLME_DECODE_DELTA(dec);
-     GLME_DECODE_UINT(dec, 0, &m->ui);
-     GLME_DECODE_INT(dec, 1, &m->i);
-     GLME_DECODE_DOUBLE(dec, 2, &m->r);
-     GLME_DECODE_VEC(dec, 3, m->vec, sizeof(m->vec));
-     GLME_DECODE_STR(dec, 4, &m->ptr);
-     GLME_DECODE_END(dec);
+     msg_t *m = (msg_t *)p;
+     GLME_DECODE_STDDEF)dec);
+     GLME_DECODE_STRUCT_START(dec);
+     GLME_DECODE_FLD_UINT(dec, m->ui, 0);
+     GLME_DECODE_FLD_INT(dec, m->i, 0);
+     GLME_DECODE_FLD_DOUBLE(dec, &m->r, 0.0);
+     GLME_DECODE_FLD_VECTOR(dec, m->vec, sizeof(m->vec));
+     GLME_DECODE_FLD_STRING(dec, &m->ptr);
+     GLME_DECODE_STRUCT_END(dec);
+     GLME_DECODE_RETURN(dec);
    }
 
 ```
@@ -98,7 +90,7 @@ Initialize encoder, construct data to send, encode it and write out to open file
       strncpy(msg.vec, "hello", sizeof(msg.vec));
       msg.ptr = "world";
       
-      msg_encode(&encoder, &msg);
+      glme_encode_struct(&encoder, MSG_ID, &msg, msg_encoder);
       // write message to stdout
       glme_buf_writem(&encoder, 1);
    }
@@ -122,7 +114,7 @@ Initialize decoder, read the data, decode and use.
       // read the message; 
       glme_buf_readm(&decoder, 0, MMAX);
       // decode the message
-      msg_decode(&decoder, &msg);
+      glme_decode_struct(&decoder, MSG_ID, &msg, msg_decoder);
    }
 ```
 
@@ -146,23 +138,25 @@ Initialize decoder, read the data, decode and use.
 Encoder functions for both types
 
 ```c
-   int encode_link_t(glme_buf_t *enc, link_t *ln)
+   int encode_link_t(glme_buf_t *enc, const void *p)
    {
-     GLME_ENCODE_STDDEF;
-     GLME_ENCODE_TYPE(enc, LINK_ID);
-     GLME_ENCODE_DELTA(enc);
-     GLME_ENCODE_INT(enc, 0, ln->value);
-     GLME_ENCODE_STRUCT_PTR(enc, 1, ln->next, encode_link_t);
-     GLME_ENCODE_END(enc);
+     const link_t *ln = (const link_t *)p;
+     GLME_ENCODE_STDDEF(enc);
+     GLME_ENCODE_STRUCT_START(enc);
+     GLME_ENCODE_FLD_INT(enc, ln->value, 0);
+     GLME_ENCODE_FLD_STRUCT(enc, LINK_ID, ln->next, encode_link_t);
+     GLME_ENCODE_STRUCT_END(enc);
+     GLME_ENCODE_RETURN(enc);
    }
 
-   int encode_list_t(glme_buf_t *enc, list_t *lst)
+   int encode_list_t(glme_buf_t *enc, const void *p)
    {
-     GLME_ENCODE_STDDEF;
-     GLME_ENCODE_TYPE(enc, LIST_ID);
-     GLME_ENCODE_DELTA(enc);
-     GLME_ENCODE_STRUCT_PTR(enc, 0, lst->head, encode_link_t);
-     GLME_ENCODE_END(enc);
+     const link_t *lst = (const link_t *)p;
+     GLME_ENCODE_STDDEF(enc);
+     GLME_ENCODE_STRUCT_START(enc);
+     GLME_ENCODE_FLD_STRUCT(enc, LINK_ID, lst->head, encode_link_t);
+     GLME_ENCODE_STRUCT_END(enc);
+     GLME_ENCODE_RETURN(enc);
    }
 ```
 
@@ -172,21 +166,23 @@ Decoder functions for both types
 ```c
    int decode_link_t(glme_buf_t *dec, link_t *ln)
    {
-     GLME_DECODE_STDDEF;
-     GLME_DECODE_TYPE(dec, LINK_ID);
-     GLME_DECODE_DELTA(dec);
-     GLME_DECODE_INT(dec, 0, &ln->value);
-     GLME_DECODE_STRUCT_PTR(dec, 1, ln->next, decode_link_t, link_t);
+     link_t *ln = (link_t *)p;
+     GLME_DECODE_STDDEF(dec);
+     GLME_DECODE_STRUCT_START(dec);
+     GLME_DECODE_FLD_INT(dec, ln->value, 0);
+     GLME_DECODE_FLD_STRUCT_PTR(dec, LINK_ID, ln->next, decode_link_t);
      GLME_DECODE_END(dec);
+     GLME_ENCODE_RETURN(enc);
    }
 
    int decode_list_t(glme_buf_t *dec, list_t *lst)
    {
-     GLME_DECODE_STDDEF;
-     GLME_DECODE_TYPE(dec, LIST_ID);
-     GLME_DECODE_DELTA(dec);
-     GLME_DECODE_STRUCT_PTR(dec, 0, lst->head, decode_link_t, link_t);
+     link_t *lst = (link_t *)p;
+     GLME_DECODE_STDDEF(dec);
+     GLME_DECODE_STRUCT_START(dec);
+     GLME_DECODE_FLD_STRUCT_PTR(dec, LINK_ID, ln->next, decode_link_t);
      GLME_DECODE_END(dec);
+     GLME_ENCODE_RETURN(enc);
    }
 ```
 
