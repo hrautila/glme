@@ -45,9 +45,9 @@ int glme_decode_value_uint64(glme_buf_t *dec, uint64_t *v)
   int n;
 
   n = gob_decode_uint64(v, &dec->buf[dec->current], dec->count-dec->current); 
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // under flow
-    return -n;
+    return n;
   }
   dec->current += n;
   return n;
@@ -58,9 +58,9 @@ int glme_decode_peek_uint64(glme_buf_t *dec, uint64_t *v)
   int n;
 
   n = gob_decode_uint64(v, &dec->buf[dec->current], dec->count-dec->current); 
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // under flow
-    return -n;
+    return n;
   }
   return n;
 }
@@ -69,7 +69,7 @@ int glme_decode_value_int64(glme_buf_t *dec, int64_t *v)
 {
   int n;
   n = gob_decode_int64(v, &dec->buf[dec->current], dec->count-dec->current); 
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // under flow
     return -n;
   }
@@ -81,7 +81,7 @@ int glme_decode_peek_int64(glme_buf_t *dec, int64_t *v)
 {
   int n;
   n = gob_decode_int64(v, &dec->buf[dec->current], dec->count-dec->current); 
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // under flow
     return -n;
   }
@@ -146,7 +146,7 @@ int glme_decode_value_double(glme_buf_t *dec, double *v)
 {
   int n;
   n = gob_decode_double(v, &dec->buf[dec->current], dec->count-dec->current); 
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // under flow
     return -n;
   }
@@ -262,9 +262,9 @@ int glme_decode_vector(glme_buf_t *dec, void *s, size_t len)
   dec->current++;
 
   n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // underflow
-    return -n;
+    return n;
   }
   if (dlen > dec->count - dec->current - n) {
     // underflow
@@ -287,9 +287,9 @@ int glme_decode_bytes(glme_buf_t *dec, void **s, size_t len)
   char *nb;
 
   n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
-  if (n > dec->count - dec->current) {
+  if (n < 0) {
     // underflow
-    return -n;
+    return n;
   }
   if (dlen > dec->count - dec->current - n) {
     // underflow
@@ -315,11 +315,30 @@ int glme_decode_bytes(glme_buf_t *dec, void **s, size_t len)
 
 int glme_decode_string(glme_buf_t *dec, char **s)
 {
+  int n;
+  int64_t dlen = 0;
+  char *nb;
+
   if (__decode_base_type(dec, GLME_STRING) < 0)
     return -1;
+
+  n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
+  if (n < 0) {
+    // underflow
+    return n;
+  }
+  if (dlen > dec->count - dec->current - n) {
+    // underflow
+    return -(dlen+n);
+  }
   *s = (char *)0;
-  int n = glme_decode_bytes(dec, (void **)s, 0);
-  return n < 0 ? n : n+1;
+  nb = malloc(dlen+1);
+  if (nb) {
+    memcpy(nb, &dec->buf[dec->current+n], dlen);
+    nb[dlen] = '\0';
+    *s = nb;
+  }
+  return nb ? dlen+n+1 : -1;
 }
 
 // ----------------------------------------------------------------
@@ -356,8 +375,8 @@ int glme_decode_delta_test(glme_buf_t *dec, unsigned int delta)
 
   // read offset at read pointer
   n = gob_decode_uint64(&offset, &dec->buf[dec->current], dec->count - dec->current);
-  if (n > dec->count - dec->current)
-    return -n;
+  if (n < 0)
+    return n;
 
   return delta == offset ? 1 : 0;
 }
@@ -371,8 +390,8 @@ int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags
 
   // read offset at read pointer
   n = gob_decode_uint64(&offset, &dec->buf[dec->current], dec->count - dec->current);
-  if (n > dec->count - dec->current)
-    return -n;
+  if (n < 0)
+    return n;
 
   if (offset == 0 || *delta == 0) {
     // end of struct or we have already seen end of struct
