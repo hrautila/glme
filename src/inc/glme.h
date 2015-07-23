@@ -176,8 +176,11 @@ extern int glme_buf_writem(glme_buf_t *gbuf, int fd);
  *
  * Resizing a glme_buf with externally allocated buffer may cause memory leaks
  * if old buffer is not properly released elsewhere.
+ *
+ * @return
+ *   New size of the internal buffer or zero on reallocation failure.
  */
-extern void glme_buf_resize(glme_buf_t *gbuf, size_t increase);
+extern size_t glme_buf_resize(glme_buf_t *gbuf, size_t increase);
 
 /**
  * Disown glme_buf allocated space.
