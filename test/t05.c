@@ -26,7 +26,7 @@ main(int argc, char *argv)
   n1 = glme_decode_string(&gbuf, &s);
   
   assert(memcmp(vec, "hello", 5) == 0 && n0 == 7);
-  assert(strcmp(s, "hello") == 0 && n1 == 8);
+  assert(strcmp(s, "hello") == 0 && n1 == 7);
   return 0;
 }
 
