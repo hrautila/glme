@@ -2,6 +2,9 @@
 // Copyright (c) Harri Rautila, 2015
 
 #include <stdio.h>
+#if defined(__x86_64__)
+#include <x86intrin.h>
+#endif
 
 // undefine __INLINE__ to allow redefinition
 #ifdef __INLINE__
@@ -38,8 +41,9 @@
  *   The number to encode.
  *
  * @return 
- *   The number of bytes written by the encode operation. A return value greater
- *   than buf_size indicates error (buffer overflow) and no bytes are written.
+ *   The number of bytes written by the encode operation. A negative value
+ *   indicate buffer overflow and number of bytes needed. In case of error
+ *   no bytes are written.
  */
 static inline
 int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
@@ -48,17 +52,22 @@ int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
   unsigned long long high;
 
   if (ull < 128) {
-    if (buf_size > 0)
-      *buf = (char)ull;
+    if (buf_size < 1) 
+      return -1;
+    *buf = (char)ull;
     return 1;
   }
 
+#if defined(__x86_64__)
+  // ull is not zero here; result of BSR is undefined if ull is zero
+  nbytes = (__bsrq(ull) >> 3) + 1;
+#else  
   // binary search for length
   high = (ull >> 32);
   if ( high == 0 ) {
     // high bytes are zero; len <= 4
     if ( (ull >> 16) == 0 ) {
-      nbytes =  (ull >> 8) == 0 ? 1 : 2;
+      nbytes = (ull >> 8) == 0 ? 1 : 2;
     } else {
       nbytes = (ull >> 24) == 0 ? 3 : 4;
     }
@@ -70,18 +79,40 @@ int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
       nbytes = (high >> 24) == 0 ? 7 : 8;
     }
   }
+#endif
   
   if (nbytes >= buf_size) {
     // overflow; just return required space
-    return nbytes + 1;
+    return -(nbytes + 1);
   }
 
   *buf++ = -nbytes;
   
-  // copy in reverse order
-  for (k = nbytes-1; k >= 0; k--) {
-    buf[k] = ull & 0xFF;
+  // without loop in reverse order; register to memory write
+  switch (nbytes) {
+  case 8:
+    buf[7] = ull & 0xFF;
     ull >>= 8;
+  case 7:
+    buf[6] = ull & 0xFF;
+    ull >>= 8;
+  case 6:
+    buf[5] = ull & 0xFF;
+    ull >>= 8;
+  case 5:
+    buf[4] = ull & 0xFF;
+    ull >>= 8;
+  case 4:
+    buf[3] = ull & 0xFF;
+    ull >>= 8;
+  case 3:
+    buf[2] = ull & 0xFF;
+    ull >>= 8;
+  case 2:
+    buf[1] = ull & 0xFF;
+    ull >>= 8;
+  case 1:
+    buf[0] = ull & 0xFF;
   }
   return nbytes + 1;
 }
@@ -97,29 +128,52 @@ int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
  *    Number of bytes available in the buffer.
  *
  * @returns
- *    Encoded byte length. If larger that buf_size then error (under flow)
- *    occured.
+ *    Encoded byte length. If negative the buffer underflow occured.
  */
 static inline
 int __gob_decode_u64(uint64_t *ull, char *buf, size_t buf_size)
 {
-  int k, nbytes;
+  int k, nc, nbytes;
   uint64_t ulval = 0;
 
   *ull = 0;
   if (buf_size < 1)
-    return 1;  // return 1 to indicate underflow, at least one byte needed
+    return -1;  // return 1 to indicate underflow, at least one byte needed
 
   if (*buf >= 0 && *buf < 128) {
     *ull = (uint64_t)*buf;
     return 1;
   }
   nbytes = -((char)*buf);
+  if (nbytes >= buf_size)
+    return -(nbytes+1);
+
   buf_size--; buf++;
+  switch (nbytes) {
+  case 8:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 7:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 6:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 5:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 4:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 3:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 2:
+    ulval = (ulval << 8) | (unsigned char)(*buf++);
+  case 1:
+    ulval = (ulval << 8) | (unsigned char)(*buf);
+  }
+#if 0
+  // old code here
   for (k = nbytes; k > 0 && buf_size > 0; k--, buf_size--) {
     ulval = (ulval << 8) | (unsigned char)(*buf);
     buf++;
   }
+#endif
   *ull = ulval;
   return nbytes+1;
 }
@@ -157,13 +211,13 @@ int gob_encode_int64(char *buf, size_t buf_size, int64_t v)
 int gob_encode_bytes(char *buf, size_t buf_size, void *s, size_t len)
 {
   int nbytes = gob_encode_uint64(buf, buf_size, len);
-  if (nbytes >= buf_size) {
-    return nbytes + len;
+  if (nbytes < 0) {
+    return nbytes - len;
   }
   buf += nbytes;
   buf_size -= nbytes;
   if (len >= buf_size) {
-    return nbytes + len;
+    return -(nbytes + len);
   }
   memcpy(buf, s, len);
   return nbytes + len;
@@ -196,32 +250,15 @@ int gob_encode_end_struct(char *buf, size_t buf_size)
 
 int gob_decode_uint64(uint64_t *ull, char *buf, size_t buf_size)
 {
-  int k, nbytes;
-  uint64_t ulval = 0;
-  *ull = 0;
-  if (buf_size < 1)
-    return 1;
-
-  if (*buf >= 0 && *buf < 128) {
-    *ull = (uint64_t)*buf;
-    return 1;
-  }
-  nbytes = -1*((char)*buf);
-  buf_size--; buf++;
-  for (k = nbytes; k > 0 && buf_size > 0; k--, buf_size--) {
-    ulval = (ulval << 8) | (unsigned char)(*buf);
-    buf++;
-  }
-  *ull = ulval;
-  return nbytes+1;
+  return __gob_decode_u64(ull, buf, buf_size);
 }
 
 int gob_decode_int64(int64_t *v, char *buf, size_t buf_size)
 {
   int n;
   uint64_t ull;
-  n = gob_decode_uint64(&ull, buf, buf_size);
-  if (n <= buf_size) {
+  n = __gob_decode_u64(&ull, buf, buf_size);
+  if (n > 0) {
     if (ull & 1) {
       *v = ~(ull >> 1);
     } else {
@@ -236,8 +273,8 @@ int gob_decode_double(double *v, char *buf, size_t buf_size)
 {
   int n;
   uint64_t ull;
-  n = gob_decode_uint64(&ull, buf, buf_size);
-  if (n <= buf_size) {
+  n = __gob_decode_u64(&ull, buf, buf_size);
+  if (n > 0) {
     ull = __gob_flip_u64(ull);
     *v = *((double *)&ull);
   }
@@ -251,9 +288,9 @@ int gob_decode_double(double *v, char *buf, size_t buf_size)
 int gob_decode_bytes(void *v, size_t vlen, char *buf, size_t buf_size)
 {
   int n, nc;
-  int64_t len;
-  n = gob_decode_uint64(&len, buf, buf_size);
-  if (n > buf_size) {
+  uint64_t len;
+  n = __gob_decode_u64(&len, buf, buf_size);
+  if (n < 0) {
     return n;
   }
   nc = n + len;
@@ -271,9 +308,9 @@ int gob_decode_bytes(void *v, size_t vlen, char *buf, size_t buf_size)
 int gob_decode_string(char *s, size_t slen, char *buf, size_t buf_size)
 {
   int n, nc;
-  int64_t len;
-  n = gob_decode_uint64(&len, buf, buf_size);
-  if (n > buf_size) {
+  uint64_t len;
+  n = __gob_decode_u64(&len, buf, buf_size);
+  if (n < 0) {
     return n;
   }
   nc = n + len;
@@ -325,7 +362,7 @@ int gob_encode_string(char *buf, size_t buf_size, char *s)
 int gob_decode_ulong(unsigned long *v, char *buf, size_t buf_size)
 {
   int n;
-  uint64_t vv;
+  uint64_t vv = 0;
   n = gob_decode_uint64(&vv, buf, buf_size);
   *v = (unsigned long)vv;
   return n;
@@ -334,7 +371,7 @@ int gob_decode_ulong(unsigned long *v, char *buf, size_t buf_size)
 int gob_decode_long(long *v, char *buf, size_t buf_size)
 {
   int n;
-  int64_t vv;
+  int64_t vv = 0;
   n = gob_decode_int64(&vv, buf, buf_size);
   *v = (long)vv;
   return n;
@@ -343,7 +380,7 @@ int gob_decode_long(long *v, char *buf, size_t buf_size)
 int gob_decode_uint(unsigned int *v, char *buf, size_t buf_size)
 {
   int n;
-  uint64_t vv;
+  uint64_t vv = 0;
   n = gob_decode_uint64(&vv, buf, buf_size);
   *v = (unsigned int)vv;
   return n;
@@ -352,7 +389,7 @@ int gob_decode_uint(unsigned int *v, char *buf, size_t buf_size)
 int gob_decode_int(int *v, char *buf, size_t buf_size)
 {
   int n;
-  int64_t vv;
+  int64_t vv = 0;
   n = gob_decode_int64(&vv, buf, buf_size);
   *v = (int)vv;
   return n;
@@ -361,7 +398,7 @@ int gob_decode_int(int *v, char *buf, size_t buf_size)
 int gob_decode_float(float *v, char *buf, size_t buf_size)
 {
   int n;
-  double vv;
+  double vv = 0.0;
   n = gob_decode_double(&vv, buf, buf_size);
   *v = (float)vv;
   return n;
