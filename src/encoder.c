@@ -18,12 +18,10 @@
 static inline
 int __encode_base_type(glme_buf_t *enc, int id)
 {
-  int rc = 0;
   unsigned int u = (id << 1);
-  while (enc->buflen <= enc->count) {
-    if (rc) return -1;
-    rc++;
-    glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024);
+  if (enc->buflen <= enc->count) {
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
+      return -1;
   }
   enc->buf[enc->count] = (unsigned char)u;
   enc->count += 1;
@@ -38,14 +36,10 @@ int glme_encode_value_uint64(glme_buf_t *enc, const uint64_t *v)
   int n, rc = 0;
   if (!enc)
     return 0;
- retry:
   n = gob_encode_uint64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
-  if (n > enc->buflen-enc->count) {
-    if (rc > 1)
+  if (n < 0) {
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
       return -1;
-    glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024);
-    rc++;
-    goto retry;
   }
   enc->count += n;
   return n;
@@ -58,12 +52,9 @@ int glme_encode_value_int64(glme_buf_t *enc, const int64_t *v)
     return 0;
  retry:
   n = gob_encode_int64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
-  if (n > enc->buflen-enc->count) {
-    if (rc > 1)
+  if (n < 0) {
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
       return -1;
-    glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024);
-    rc++;
-    goto retry;
   }
   enc->count += n;
   return n;
@@ -71,17 +62,13 @@ int glme_encode_value_int64(glme_buf_t *enc, const int64_t *v)
 
 int glme_encode_value_double(glme_buf_t *enc, const double *v)
 {
-  int n, rc = 0;
+  int n;
   if (!enc)
     return 0;
- retry:
   n = gob_encode_double(&enc->buf[enc->count], enc->buflen-enc->count, *v);
-  if (n > enc->buflen-enc->count) {
-    if (rc > 1)
+  if (n < 0) {
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
       return -1;
-    glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024);
-    rc++;
-    goto retry;
   }
   enc->count += n;
   return n;
@@ -206,29 +193,19 @@ int glme_encode_float(glme_buf_t *enc, const float *v)
 
 int glme_encode_bytes(glme_buf_t *enc, const void *v, size_t vlen)
 {
+  char tmp[12];
   int n, rc = 0;
   if (!enc)
     return 0;
- retry:
-  n = gob_encode_uint64(&enc->buf[enc->count], enc->buflen - enc->count, (uint64_t)vlen);
-  if (n > enc->buflen - enc->count) {
-    if (rc > 1)
+
+  n = gob_encode_uint64(tmp, sizeof(tmp), (uint64_t)vlen);
+  if (n + vlen > enc->buflen - enc->count) {
+    if (glme_buf_resize(enc, n + vlen - (enc->buflen - enc->count)) == 0)
       return -1;
-    glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024);
-    rc++;
-    goto retry;
   }
-  rc = 0;
+
+  memcpy(&enc->buf[enc->count], tmp, n);
   enc->count += n;
-  while (vlen > enc->buflen - enc->count) {
-    if (rc > 1) {
-      // readjust count to original state
-      enc->count -= n;
-      return -1;
-    }
-    glme_buf_resize(enc, vlen - (enc->buflen - enc->count));
-    rc++;
-  }
   memcpy(&enc->buf[enc->count], v, vlen);
   enc->count += vlen;
   return n+vlen;
@@ -236,18 +213,27 @@ int glme_encode_bytes(glme_buf_t *enc, const void *v, size_t vlen)
 
 int glme_encode_string(glme_buf_t *gbuf, const char *s)
 {
-  int n = __encode_base_type(gbuf, GLME_STRING);
+  int nc, n;
+  n = __encode_base_type(gbuf, GLME_STRING);
   if (n < 0)
     return n;
-  return n + glme_encode_bytes(gbuf, s, strlen(s)+1);
+  nc = glme_encode_bytes(gbuf, s, strlen(s));
+  if (nc < 0) {
+    return nc;
+  }
+  return n + nc;
 }
 
 int glme_encode_vector(glme_buf_t *gbuf, const char *s, size_t len)
 {
-  int n = __encode_base_type(gbuf, GLME_VECTOR);
+  int n, nc;
+  n = __encode_base_type(gbuf, GLME_VECTOR);
   if (n < 0)
     return n;
-  return n + glme_encode_bytes(gbuf, s, len);
+  nc = glme_encode_bytes(gbuf, s, len);
+  if (nc < 0)
+    return nc;
+  return n + nc;
 }
 
 // -------------------------------------------------------------------------
