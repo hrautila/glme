@@ -120,7 +120,7 @@ size_t glme_buf_size(glme_buf_t *gbuf)
 }
 
 
-void glme_buf_resize(glme_buf_t *gbuf, size_t increase)
+size_t glme_buf_resize(glme_buf_t *gbuf, size_t increase)
 {
   // resize only of owner of the data buffer or if current size is zero
   // and owner is not set
@@ -130,8 +130,10 @@ void glme_buf_resize(glme_buf_t *gbuf, size_t increase)
       gbuf->buf = b;
       gbuf->buflen += increase;
       gbuf->owner = 1;
+      return  gbuf->buflen;
     }
   }
+  return 0;
 }
 
 void glme_buf_disown(glme_buf_t *gbuf)
