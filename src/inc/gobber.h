@@ -7,9 +7,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <complex.h>
 
-#ifndef __INLINE__
-#define __INLINE__ extern inline
+#ifndef __GOB_INLINE__
+#define __GOB_INLINE__ extern inline
 #endif
 
 
@@ -90,6 +91,7 @@ extern int gob_encode_bytes(char *buf, size_t buf_size, void *s, size_t len);
  * @see gob_encode_uint64
  */
 extern int gob_encode_double(char *buf, size_t buf_size, double v);
+extern int gob_encode_complex128(char *buf, size_t buf_size, double complex v);
 
 /**
  * Encode type identifier into the specified buffer.
@@ -127,6 +129,7 @@ extern int gob_decode_int64(int64_t *v, char *buf, size_t buf_size);
 /**
  */
 extern int gob_decode_double(double *v, char *buf, size_t buf_size);
+extern int gob_decode_complex128(double complex *v, char *buf, size_t buf_size);
 
 /**
  */
@@ -163,6 +166,7 @@ extern int gob_encode_bool(char *buf, size_t buf_size, int v);
  * Encode single precision real number into the specified buffer.
  */
 extern int gob_encode_float(char *buf, size_t buf_size, float v);
+extern int gob_encode_complex64(char *buf, size_t buf_size, float complex v);
 
 /**
  * Encode string into the specified buffer.
@@ -194,6 +198,7 @@ extern int gob_decode_int(int *v, char *buf, size_t buf_size);
  * Decode single precision float from the specified buffer.
  */
 extern int gob_decode_float(float *v, char *buf, size_t buf_size);
+extern int gob_decode_complex64(float complex *v, char *buf, size_t buf_size);
 
 #endif
 
