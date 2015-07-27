@@ -79,8 +79,8 @@ main(int argc, char *argv)
   int i, n0, n1, typeid;
   size_t len;
 
-  struct array a1, a0 = (struct array){5, ivec};
-  struct darray f1, f0 = (struct darray){5, ifc};
+  struct array *ap1, a1, a0 = (struct array){5, ivec};
+  struct darray *fp1, f1, f0 = (struct darray){5, ifc};
 
   glme_buf_init(&gbuf, 1024);
 
@@ -90,8 +90,9 @@ main(int argc, char *argv)
   if (argc > 1)
     write(1, glme_buf_data(&gbuf), glme_buf_len(&gbuf));
 
-  glme_decode_struct(&gbuf, 20, &a1, decode_array);
-  glme_decode_struct(&gbuf, 21, &f1, decode_darray);
+  ap1 = &a1; fp1 = &f1;
+  glme_decode_struct(&gbuf, 20, (void **)&ap1, 0, decode_array);
+  glme_decode_struct(&gbuf, 21, (void **)&fp1, 0, decode_darray);
 
   assert(a0.len == a1.len);
   assert(memcmp(a0.data, a1.data, sizeof(ivec)) == 0);

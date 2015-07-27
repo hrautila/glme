@@ -95,7 +95,7 @@ int decode_struct_test(glme_buf_t *dec, void *ptr)
 main(int argc, char *argv)
 {
   glme_buf_t gbuf;
-  struct test t0, t1, t2, t3;
+  struct test t0, t1, t2, t3, *tp1;
   int i, n0, n1, typeid, iv[2] = {-1, -2};
   size_t len;
   struct other oval = (struct other){129, -62};
@@ -126,12 +126,13 @@ main(int argc, char *argv)
 
   glme_buf_init(&gbuf, 1024);
 
-  glme_encode_struct(&gbuf, 32, (void *)&t0, (encoder)encode_struct_test);
+  glme_encode_struct(&gbuf, 32, (void *)&t0, (glme_encoder_f)encode_struct_test);
   //encode_struct(&gbuf, &t2);
   if (argc > 1)
     write(1, glme_buf_data(&gbuf), glme_buf_len(&gbuf));
 
-  n0 = glme_decode_struct(&gbuf, 32, &t1, (decoder)decode_struct_test);
+  tp1 = &t1;
+  n0 = glme_decode_struct(&gbuf, 32, (void **)&tp1, 0, (glme_decoder_f)decode_struct_test);
   //n1 = decode_struct(&gbuf, &t3);
 
   assert(t0.a == t1.a);

@@ -113,7 +113,7 @@ void printdata(data_t *t)
 
 int main(int argc, char **argv)
 {
-  data_t msg, rcv;
+  data_t msg, rcv, *rptr;
   glme_buf_t encoder;
   glme_buf_t decoder;
   int k, n, doencode = 1;
@@ -169,7 +169,8 @@ int main(int argc, char **argv)
     close(pipefd[1]);
 
     n = glme_buf_readm(&decoder, pipefd[0], MMAX);
-    n = glme_decode_struct(&decoder, MSG_DATA_ID, &rcv, decode_data_t);
+    rptr = &rcv;
+    n = glme_decode_struct(&decoder, MSG_DATA_ID, (void **)&rptr, 0, decode_data_t);
     if (n < 0) {
       fprintf(stderr, "decode_error... %d\n", n);
     }

@@ -23,9 +23,9 @@ int encode_struct(glme_buf_t *gb, const void *ptr)
   glme_encode_start_struct(gb, &delta);
 
   glme_encode_field(gb, &delta, GLME_INT, 0, &p->a, 0,
-		    (p->a != 0), (encoder)glme_encode_int);
+		    (p->a != 0), (glme_encoder_f)glme_encode_int);
   glme_encode_field(gb, &delta, GLME_FLOAT, 0, &p->b, 0,
-		    (p->b != 0.0), (encoder)glme_encode_double);
+		    (p->b != 0.0), (glme_encoder_f)glme_encode_double);
   glme_encode_end_struct(gb);
   return glme_buf_len(gb) - nc;
 }
@@ -40,9 +40,9 @@ int decode_struct(glme_buf_t *gb, void *ptr)
 
   glme_decode_start_struct(gb, &delta);
   glme_decode_field(gb, &delta, GLME_INT, 0, &p->a, 0, 0,
-		    (decoder)glme_decode_int);
+		    (glme_decoder_f)glme_decode_int);
   glme_decode_field(gb, &delta, GLME_FLOAT, 0, &p->b, 0, 0,
-		    (decoder)glme_decode_double);
+		    (glme_decoder_f)glme_decode_double);
   glme_decode_end_struct(gb);
   return glme_buf_at(gb) - nc;
 }
@@ -50,7 +50,7 @@ int decode_struct(glme_buf_t *gb, void *ptr)
 main(int argc, char *argv)
 {
   glme_buf_t gbuf;
-  struct test t0, t1, t2, t3;
+  struct test t0, t1, t2, t3, *tp1, *tp3;
   int i, n0, n1, typeid;
   size_t len;
 
@@ -67,8 +67,9 @@ main(int argc, char *argv)
   if (argc > 1)
     write(1, glme_buf_data(&gbuf), glme_buf_len(&gbuf));
 
-  glme_decode_struct(&gbuf, 20, &t1, decode_struct);
-  glme_decode_struct(&gbuf, 20, &t3, decode_struct);
+  tp1 = &t1; tp3 = &t3;
+  glme_decode_struct(&gbuf, 20, (void **)&tp1, 0, decode_struct);
+  glme_decode_struct(&gbuf, 20, (void **)&tp3, 0, decode_struct);
 
   assert(t0.a == t1.a);
   assert(t0.b == t1.b);

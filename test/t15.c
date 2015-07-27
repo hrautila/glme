@@ -91,16 +91,15 @@ int decode_list(glme_buf_t *gb, void *ptr)
   GLME_DECODE_STRUCT_END(gb);
 
   if (l->head) {
-    // allocate head
-    l->head = link_new();
+    // set head to null to force memory allocation
+    l->head = (struct link *)0;
+    if (glme_decode_struct(gb, 33, (void **)&l->head, sizeof(struct link), decode_link) < 0)
+      return -11;
     for (n = l->head; n; n = n->next) {
-      // decode current
-      if (glme_decode_struct(gb, 33, n, decode_link) < 0)
+      // set next to null to force memory allocation
+      n->next = (struct link *)0;
+      if (glme_decode_struct(gb, 33, (void **)&n->next, sizeof(struct link), decode_link) < 0)
 	return -11;
-      // allocate next if needed
-      if (n->next) {
-	n->next = link_new();
-      }
     }
   }
   GLME_DECODE_RETURN(gb);
@@ -118,7 +117,7 @@ main(int argc, char *argv)
     { .a = -2, .b =  0.0, .next = (struct link *)0}
   };
 
-  struct list l1, l0 = (struct list){t0};
+  struct list *lp1, l1, l0 = (struct list){t0};
   t0[0].next = &t0[1];
   t0[1].next = &t0[2];
 
@@ -129,7 +128,8 @@ main(int argc, char *argv)
   if (argc > 1)
     write(1, glme_buf_data(&gbuf), glme_buf_len(&gbuf));
 
-  glme_decode_struct(&gbuf, 32, &l1, decode_list);
+  lp1 = &l1;
+  glme_decode_struct(&gbuf, 32, (void **)&lp1, 0, decode_list);
 
   for (i = 0, n0 = l0.head, n1 = l1.head; n1; n0 = n0->next, n1 = n1->next, i++) {
     //fprintf(stderr, "%d: a = %d,%d, b = %f,%f\n", i, n0->a, n1->a, n0->b, n1->b);

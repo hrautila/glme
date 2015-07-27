@@ -24,12 +24,12 @@ int encode_struct_other(glme_buf_t *enc, const void *ptr)
   // first field
   not_empty = p->u != 0;
   e = glme_encode_field(enc, &delta, GLME_UINT, GLME_F_NONE,
-			&p->u, 0, not_empty, (encoder)glme_encode_uint);
+			&p->u, 0, not_empty, (glme_encoder_f)glme_encode_uint);
   if (e < 0) return e;
 
   not_empty = p->i != 0; 
   e = glme_encode_field(enc, &delta, GLME_INT, GLME_F_NONE,
-			&p->i, 0, not_empty, (encoder)glme_encode_int);
+			&p->i, 0, not_empty, (glme_encoder_f)glme_encode_int);
   if (e < 0) return e;
 
   e = glme_encode_end_struct(enc);
@@ -45,11 +45,11 @@ int decode_struct_other(glme_buf_t *enc, void *ptr)
   // first field
   p->u = 0;
   e =glme_decode_field(enc, &delta, GLME_UINT, GLME_F_NONE,
-		       &p->u, 0, sizeof(int), (decoder)glme_decode_uint);
+		       &p->u, 0, sizeof(int), (glme_decoder_f)glme_decode_uint);
 
   p->i = 0; 
   e = glme_decode_field(enc, &delta, GLME_INT, GLME_F_NONE,
-			&p->i, 0, sizeof(int), (decoder)glme_decode_int);
+			&p->i, 0, sizeof(int), (glme_decoder_f)glme_decode_int);
 
   e = glme_decode_end_struct(enc);
   return enc->count - nc;
@@ -79,33 +79,33 @@ int encode_struct_test(glme_buf_t *enc, const void *ptr)
   // first field
   not_empty = p->a != 0;
   glme_encode_field(enc, &delta, GLME_INT, GLME_F_NONE,
-		    &p->a, 0, not_empty, (encoder)glme_encode_int);
+		    &p->a, 0, not_empty, (glme_encoder_f)glme_encode_int);
 
   not_empty = p->b != 0.0; 
   glme_encode_field(enc, &delta, GLME_FLOAT, 0,
-		    &p->b, 0, not_empty, (encoder)glme_encode_double);
+		    &p->b, 0, not_empty, (glme_encoder_f)glme_encode_double);
 
   nlen = 4;
   not_empty = p->vec[0] != '\0' ? 1 : 0;
   glme_encode_field(enc, &delta, GLME_VECTOR, 0,
-		    p->vec, sizeof(p->vec), not_empty, (encoder)0);
+		    p->vec, sizeof(p->vec), not_empty, (glme_encoder_f)0);
 
   // if .s is null field is omitted
-  glme_encode_field(enc, &delta, GLME_STRING, 0, p->s, 0, 1, (encoder)0);
+  glme_encode_field(enc, &delta, GLME_STRING, 0, p->s, 0, 1, (glme_encoder_f)0);
 
   // this field is never omitted
   glme_encode_field(enc, &delta, GLME_UINT, GLME_F_ARRAY, p->uvec, 3,
-		    sizeof(unsigned int), (encoder)glme_encode_value_uint);
+		    sizeof(unsigned int), (glme_encoder_f)glme_encode_value_uint);
 
   // if .iv is null or .ilen == 0 field is omitted
   glme_encode_field(enc, &delta, GLME_INT, GLME_F_ARRAY, p->iv, p->ilen,
-		    sizeof(int), (encoder)glme_encode_value_int);
+		    sizeof(int), (glme_encoder_f)glme_encode_value_int);
 
   glme_encode_field(enc, &delta, 33, 0, &p->other, 0, sizeof(p->other),
-		    (encoder)encode_struct_other);
+		    (glme_encoder_f)encode_struct_other);
 
   glme_encode_field(enc, &delta, 33, 0, p->optr, 0, sizeof(p->optr[0]),
-		    (encoder)encode_struct_other);
+		    (glme_encoder_f)encode_struct_other);
 
   glme_encode_end_struct(enc);
 
@@ -121,42 +121,42 @@ int decode_struct_test(glme_buf_t *gb, void *ptr)
 
   p->a = 0;
   n = glme_decode_field(gb, &delta, GLME_INT, 0, &p->a, &nlen,
-			0, (decoder)glme_decode_int);
+			0, (glme_decoder_f)glme_decode_int);
   if (n < 0) return -10;
 
   p->b = 0.0;
   n = glme_decode_field(gb, &delta, GLME_FLOAT, 0, &p->b, &nlen,
-			0, (decoder)glme_decode_double);
+			0, (glme_decoder_f)glme_decode_double);
   if (n < 0) return -11;
 
   ptr = &p->vec[0]; nlen = 4;
   memset(p->vec, 0, sizeof(p->vec));
-  n = glme_decode_field(gb, &delta, GLME_VECTOR, 0, ptr, &nlen, 1, (decoder)0);
+  n = glme_decode_field(gb, &delta, GLME_VECTOR, 0, ptr, &nlen, 1, (glme_decoder_f)0);
   if (n < 0) return -12;
 
   p->s = (void *)0; nlen = 0;
-  n = glme_decode_field(gb, &delta, GLME_STRING, 0, &p->s, &nlen, 1, (decoder)0);
+  n = glme_decode_field(gb, &delta, GLME_STRING, 0, &p->s, &nlen, 1, (glme_decoder_f)0);
   if (n < 0) return -13;
 
   ptr = &p->uvec[0]; nlen = 3;
   memset(p->uvec, 0, sizeof(p->uvec));
   n = glme_decode_field(gb, &delta, GLME_UINT, GLME_F_ARRAY, &ptr, &nlen,
-			sizeof(int), (decoder)glme_decode_value_uint);
+			sizeof(int), (glme_decoder_f)glme_decode_value_uint);
   if (n < 0) return -14;
 
   p->iv = (int *)0;  p->ilen = 0;
   n = glme_decode_field(gb, &delta, GLME_INT, GLME_F_ARRAY, &p->iv, &p->ilen,
-			sizeof(int), (decoder)glme_decode_value_int);
+			sizeof(int), (glme_decoder_f)glme_decode_value_int);
   if (n < 0) return -15;
 
   nlen = 0;
   n = glme_decode_field(gb, &delta, 33, 0, &p->other, &nlen,
-			sizeof(p->other), (decoder)decode_struct_other);
+			sizeof(p->other), (glme_decoder_f)decode_struct_other);
   if (n < 0) return -16;
 
   nlen = 0;
   n = glme_decode_field(gb, &delta, 33, GLME_F_PTR, &p->optr, &nlen,
-			sizeof(p->optr[0]), (decoder)decode_struct_other);
+			sizeof(p->optr[0]), (glme_decoder_f)decode_struct_other);
   if (n < 0) return -16;
 
   if (glme_decode_end_struct(gb) < 0)
@@ -168,7 +168,7 @@ int decode_struct_test(glme_buf_t *gb, void *ptr)
 main(int argc, char *argv)
 {
   glme_buf_t gbuf;
-  struct test t0, t1, t2, t3;
+  struct test t0, t1, t2, t3, *tp1, *tp3;
   int i, n0, n1, typeid, iv[2] = {-1, -2};
   size_t len;
   struct other oval = (struct other){129, -62};
@@ -199,12 +199,13 @@ main(int argc, char *argv)
 
   glme_buf_init(&gbuf, 1024);
 
-  glme_encode_struct(&gbuf, 32, (void *)&t0, (encoder)encode_struct_test);
+  glme_encode_struct(&gbuf, 32, (void *)&t0, (glme_encoder_f)encode_struct_test);
   //encode_struct(&gbuf, &t2);
   if (argc > 1)
     write(1, glme_buf_data(&gbuf), glme_buf_len(&gbuf));
 
-  n0 = glme_decode_struct(&gbuf, 32, &t1, (decoder)decode_struct_test);
+  tp1 = &t1;
+  n0 = glme_decode_struct(&gbuf, 32, (void **)&tp1, 0, (glme_decoder_f)decode_struct_test);
   //n1 = decode_struct(&gbuf, &t3);
 
   assert(t0.a == t1.a);

@@ -30,12 +30,12 @@ int encode_link(glme_buf_t *gb, const void *ptr)
   glme_encode_start_struct(gb, &delta);
 
   glme_encode_field(gb, &delta, GLME_INT, 0, &l->a, 0,
-		    (l->a != 0), (encoder)glme_encode_int);
+		    (l->a != 0), (glme_encoder_f)glme_encode_int);
   glme_encode_field(gb, &delta, GLME_FLOAT, 0, &l->b, 0,
-		    (l->b != 0.0), (encoder)glme_encode_double);
+		    (l->b != 0.0), (glme_encoder_f)glme_encode_double);
   flag = l->next ? 1 : 0;
   glme_encode_field(gb, &delta, GLME_UINT, 0, &flag, 0,
-		    flag, (encoder)glme_encode_uint);
+		    flag, (glme_encoder_f)glme_encode_uint);
   glme_encode_end_struct(gb);
 
   return glme_buf_len(gb) - nc;
@@ -52,11 +52,11 @@ int decode_link(glme_buf_t *gb, void *ptr)
 
   glme_decode_start_struct(gb, &delta);
   glme_decode_field(gb, &delta, GLME_INT, 0, &l->a, 0, 0,
-		    (decoder)glme_decode_int);
+		    (glme_decoder_f)glme_decode_int);
   glme_decode_field(gb, &delta, GLME_FLOAT, 0, &l->b, 0, 0,
-		    (decoder)glme_decode_double);
+		    (glme_decoder_f)glme_decode_double);
   glme_decode_field(gb, &delta, GLME_UINT, 0, &l->next, 0,
-		    0, (decoder)glme_decode_uint64);
+		    0, (glme_decoder_f)glme_decode_uint64);
 
   glme_decode_end_struct(gb);
   return glme_buf_at(gb) - nc;
@@ -77,7 +77,7 @@ int encode_list(glme_buf_t *gb, const void *ptr)
 
   flag = l->head ? 1 : 0;
   glme_encode_field(gb, &delta, GLME_UINT, 0, &flag, 0,
-		    flag, (encoder)glme_encode_uint);
+		    flag, (glme_encoder_f)glme_encode_uint);
 
   glme_encode_end_struct(gb);
   
@@ -93,25 +93,23 @@ int decode_list(glme_buf_t *gb, void *ptr)
 {
   int i, typeid, delta = 1;
   size_t nc = glme_buf_len(gb);
-  struct link *n;
+  struct link *n, **np;
   struct list *l = (struct list *)ptr;
 
   glme_decode_start_struct(gb, &delta);
 
   glme_decode_field(gb, &delta, GLME_UINT, 0, &l->head, 0,
-		    0, (decoder)glme_decode_uint64);
+		    0, (glme_decoder_f)glme_decode_uint64);
   glme_decode_end_struct(gb);
 
   // decode link entries after list head (if head is non-null)
   if (l->head) {
-    l->head = (struct link *)malloc(sizeof(struct link));
+    l->head = (struct link *)0;
+    glme_decode_struct(gb, 33, (void **)&l->head, sizeof(struct link), decode_link);
+
     for (i = 1, n = l->head; n; n = n->next, i++) {
-      glme_decode_struct(gb, 33, n, decode_link);
-      if (n->next) {
-	n->next = (struct link *)malloc(sizeof(struct link));
-	if (! n->next)
-	  return -3;
-      }
+      n->next = (struct link *)0;
+      glme_decode_struct(gb, 33, (void **)&n->next, sizeof(struct link), decode_link);
     }
   }
 
@@ -130,7 +128,7 @@ main(int argc, char *argv)
     { .a = -2, .b =  0.0, .next = (struct link *)0}
   };
 
-  struct list l1, l0 = (struct list){t0};
+  struct list *lp1, l1, l0 = (struct list){t0};
   t0[0].next = &t0[1];
   t0[1].next = &t0[2];
 
@@ -141,7 +139,8 @@ main(int argc, char *argv)
   if (argc > 1)
     write(1, glme_buf_data(&gbuf), glme_buf_len(&gbuf));
 
-  glme_decode_struct(&gbuf, 32, &l1, decode_list);
+  lp1 = &l1;
+  glme_decode_struct(&gbuf, 32, (void **)&lp1, 0, decode_list);
     
   for (i = 0, n0 = l0.head, n1 = l1.head; n1; n0 = n0->next, n1 = n1->next, i++) {
     //fprintf(stderr, "%d: a = %d,%d, b = %f,%f\n", i, n0->a, n1->a, n0->b, n1->b);

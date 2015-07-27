@@ -97,7 +97,7 @@ int main(int argc, char **argv)
   int pipefd[2];
   pid_t cpid;
   uint64_t rlen, nbytes;
-  list_t snd, rcv;
+  list_t snd, rcv, *rptr;
   link_t s0, s1, s2;
   link_t *links;
   long vlen;
@@ -160,7 +160,8 @@ int main(int argc, char **argv)
     close(pipefd[1]);
 
     n = glme_buf_readm(&decoder, pipefd[0], MMAX);
-    n = glme_decode_struct(&decoder, MSG_LIST_ID, &rcv, decode_list_t);
+    rptr = &rcv;
+    n = glme_decode_struct(&decoder, MSG_LIST_ID, (void **)&rptr, 0, decode_list_t);
     if (n < 0) {
       fprintf(stderr, "decode_error... %d\n", n);
     }
