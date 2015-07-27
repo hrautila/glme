@@ -229,6 +229,16 @@ int gob_encode_double(char *buf, size_t buf_size, double v)
   return __gob_encode_u64(buf, buf_size, ul);
 }
 
+int gob_encode_complex128(char *buf, size_t buf_size, double complex v)
+{
+  int n1, n0;
+  if ((n0 = gob_encode_double(buf, buf_size, creal(v))) < 0)
+    return n0;
+  if ((n1 = gob_encode_double(&buf[n0], buf_size-n0, cimag(v))) < 0)
+    return n1;
+  return n1+n0;
+}
+
 int gob_encode_type(char *buf, size_t buf_size, int id)
 {
   return gob_encode_int64(buf, buf_size, (int64_t)id);
@@ -281,7 +291,17 @@ int gob_decode_double(double *v, char *buf, size_t buf_size)
   return n;
 }
 
-
+int gob_decode_complex128(double complex *v, char *buf, size_t buf_size)
+{
+  double re, im;
+  int n0, n1;
+  if ((n0 = gob_decode_double(&re, buf, buf_size)) < 0)
+    return n0;
+  if ((n1 = gob_decode_double(&re, &buf[n0], buf_size-n0)) < 0)
+    return n1;
+  *v = re + im*I;
+  return n0 + n1;
+}
 
 /**
  */
@@ -352,6 +372,12 @@ int gob_encode_float(char *buf, size_t buf_size, float v)
   return gob_encode_double(buf, buf_size, (double)v);
 }
 
+int gob_encode_complex64(char *buf, size_t buf_size, float complex v)
+{
+  return gob_encode_complex128(buf, buf_size, (double complex)v);
+}
+
+
 int gob_encode_string(char *buf, size_t buf_size, char *s)
 {
   return gob_encode_bytes(buf, buf_size, s, strlen(s)+1);
@@ -401,6 +427,15 @@ int gob_decode_float(float *v, char *buf, size_t buf_size)
   double vv = 0.0;
   n = gob_decode_double(&vv, buf, buf_size);
   *v = (float)vv;
+  return n;
+}
+
+int gob_decode_complex64(float complex *v, char *buf, size_t buf_size)
+{
+  int n;
+  double complex vv = 0.0 + 0.0*I;
+  n = gob_decode_complex128(&vv, buf, buf_size);
+  *v = (float complex)vv;
   return n;
 }
 
