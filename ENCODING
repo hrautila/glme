@@ -88,6 +88,63 @@ field 0 with value 7 is transmitted as unsigned delta = 1, unsigned value = 7 or
 Finally, after all the fields have been sent a terminating mark denotes the end of the struct.
 That mark is a delta=0 value, which has representation (00). 
 
+## BNF
+
+   stream        ::= element*
+   element       ::= simple | compound
+   compound      ::= array | struct | map
+   simple        ::= int | uint | float | vector | string
+
+   int           ::= type-int int-value
+   uint          ::= type-uint uint-value
+   float         ::= type-float float-value
+   vector        ::= type-vector vector-value
+   string        ::= type-string string-value
+   complex       ::= type-complex complex-value
+
+   int-value     ::= INT(n)   (see above for int encoding)
+   uint-value    ::= UINT(n)  (see above for uint encoding)
+   float-value   ::= FLOAT(d) (see above for float encoding)
+   complex-value ::= float-value float-value
+
+   vector-value  ::= length byte-data
+   string-value  ::= length byte-data
+   length        ::= UINT(n)
+
+   simple-type   ::= type-int | type-uint | type-float | type-vector | type-string
+   type_int      ::= INT(3)
+   type-uint     ::= INT(2)
+   type-float    ::= INT(4)
+   type-vector   ::= INT(5)
+   type-string   ::= INT(6)
+   type-complex  ::= INT(7)
+
+   compound-type ::= type-array | type-map | type-struct
+   type-array    ::= INT(10)
+   type-map      ::= INT(11)
+   type-struct   ::= INT(>GLME_BASE_MAX) (positive integer > GLME_BASE_MAX)
+
+   array         ::= array-type array-value
+   array-value   ::= simple-type count value-list
+                  |  type-any count element-list
+
+   count         ::= UINT(n)
+   type-any      ::= INT(0)
+
+   struct        ::= type-id struct-value
+   struct-value  ::= field* struct-end
+   field         ::= delta element
+   delta         ::= UINT(n)
+   struct-end    ::= UINT(0)
+
+   map           ::= type-map map-value
+   map-value     ::= key-type elem-type count value-pair*
+                  |  key-type type-any count typed-pair*
+   key-type      ::= type-uint | type-string
+   elem-type     ::= simple-type | compound-type
+   value-pair    ::= key-value elem-value
+   typed-pair    ::= key-value element
+
 ## Examples
 
 unsigned int(10): [
@@ -114,13 +171,12 @@ int(-10): [
 
 string('hello'): [
   10  -- string type (5)
-  6   -- length
+  5   -- length
   'h'
   'e'
   'l'
   'l'
   'o'
-  '\0'
 ]
 
 char[3]('hei'): [
@@ -142,7 +198,6 @@ int[3](1,2,3): [
 ]
 
 struct { int a; int b; }({.a = 1; .b = 2} ID=32): [
-   22  -- struct type
    64  -- struct type id (user selected positive integer)
    1   -- delta
    4   -- integer type
@@ -155,7 +210,6 @@ struct { int a; int b; }({.a = 1; .b = 2} ID=32): [
 
 
 struct { int a; int b; }({.a = 0; .b = 2} ID=32): [
-   22  -- struct type
    64  -- struct type id (user selected positive integer)
    2   -- delta
    4   -- integer type
@@ -167,9 +221,8 @@ struct { int a; int b; }({.a = 0; .b = 2} ID=32): [
 struct { int a; int b; }({.a = 0; .b = 2} TYPENAME=T): [
    24  -- named struct type
    10  -- string type  | encoded 
-   2   -- length       |   TYPENAME
+   1   -- length       |   TYPENAME
    'T'                 |
-   '\0'                |
    2   -- delta
    4   -- integer type
    4   -- value b = 2
@@ -179,15 +232,11 @@ struct { int a; int b; }({.a = 0; .b = 2} TYPENAME=T): [
 map { str -> struct { int a } } ({"x": { .a = 10 }} ID=33): [
     26  -- map type
     10  -- key type (string)
-    22  -- element type (struct)
+    66  -- element type (ID=33)
     1   -- number of elements
-    10  -- string type (1st key)
-    2   -- len
+    1   -- len of 1st key
     'x'
-    '\0'
-    22  -- struct type  (1st value)
-    66  -- struct type id (33)
-    1   -- delta
+    1   -- delta 
     4   -- integer type
     20  -- value
     0   -- end of struct
@@ -197,24 +246,19 @@ map { str -> struct { int a } } ({"x": { .a = 10 }} ID=33): [
 map { str -> struct { int a } } ({"x": { .a = 10 }} NAME='MAP'): [
     28  -- named map type
     10  -- string type  | encoded 
-    4   -- length       |   TYPENAME
+    3   -- length       |   TYPENAME
     'M'                 |
     'A'                 |
     'P'                 |
-    '\0'                |
     10  -- key type (string)
-    22  -- element type (struct)
+    66  -- element type (ID=33)
     1   -- number of elements
-    10  -- string type (1st key)
-    2   -- len
-    'x'
-    '\0'
-    22  -- struct type  (1st value)
-    66  -- struct type id (33)
-    1   -- delta
-    4   -- integer type
-    20  -- value
-    0   -- end of struct
+    1   -- len          | 1st key
+    'x'                 |
+    1   -- delta        | 1st element
+    4   -- integer type |
+    20  -- value        |
+    0   -- end of struct|
 ]
 
 
