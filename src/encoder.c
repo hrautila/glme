@@ -38,8 +38,9 @@ int glme_encode_value_uint64(glme_buf_t *enc, const uint64_t *v)
     return 0;
   n = gob_encode_uint64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
   if (n < 0) {
-    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0) {
       return -1;
+    }
   }
   enc->count += n;
   return n;
@@ -53,8 +54,9 @@ int glme_encode_value_int64(glme_buf_t *enc, const int64_t *v)
  retry:
   n = gob_encode_int64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
   if (n < 0) {
-    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0) {
       return -1;
+    }
   }
   enc->count += n;
   return n;
@@ -67,8 +69,24 @@ int glme_encode_value_double(glme_buf_t *enc, const double *v)
     return 0;
   n = gob_encode_double(&enc->buf[enc->count], enc->buflen-enc->count, *v);
   if (n < 0) {
-    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0)
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0) {
       return -1;
+    }
+  }
+  enc->count += n;
+  return n;
+}
+
+int glme_encode_value_complex128(glme_buf_t *enc, const double complex *v)
+{
+  int n;
+  if (!enc)
+    return 0;
+  n = gob_encode_complex128(&enc->buf[enc->count], enc->buflen-enc->count, *v);
+  if (n < 0) {
+    if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0) {
+      return -1;
+    }
   }
   enc->count += n;
   return n;
@@ -103,6 +121,12 @@ int glme_encode_value_float(glme_buf_t *gbuf, const float *v)
 {
   double d = (double)(*v);
   return glme_encode_value_double(gbuf, &d); //(double)v);
+}
+
+int glme_encode_value_complex64(glme_buf_t *gbuf, const float complex *v)
+{
+  double complex d = (double complex)(*v);
+  return glme_encode_value_complex128(gbuf, &d); //(double)v);
 }
 
 // -------------------------------------------------------------------------
@@ -188,6 +212,26 @@ int glme_encode_float(glme_buf_t *enc, const float *v)
   return nc < 0 ? nc : nc + n;
 }
 
+int glme_encode_complex128(glme_buf_t *enc, const double complex *v)
+{
+  int n, nc;
+  n = __encode_base_type(enc, GLME_COMPLEX);
+  if (n < 0)
+    return n;
+  nc = glme_encode_value_complex128(enc, v);
+  return nc < 0 ? nc : nc + n;
+}
+
+int glme_encode_complex64(glme_buf_t *enc, const float complex *v)
+{
+  int n, nc;
+  n = __encode_base_type(enc, GLME_COMPLEX);
+  if (n < 0)
+    return n;
+  nc = glme_encode_value_complex64(enc, v);
+  return nc < 0 ? nc : nc + n;
+}
+
 // --------------------------------------------------------------------
 // Byte array types (vectors and strings)
 
@@ -265,7 +309,7 @@ int glme_encode_array_start(glme_buf_t *enc, int typeid, size_t sz)
 }
 
 int glme_encode_array_data(glme_buf_t *enc, const void *vptr,
-                           size_t len, size_t esize, encoder efunc)
+                           size_t len, size_t esize, glme_encoder_f efunc)
 {
   const char *ptr = (const char *)vptr;
   int k, n;
@@ -282,7 +326,7 @@ int glme_encode_array_data(glme_buf_t *enc, const void *vptr,
 }
 
 int glme_encode_value_array(glme_buf_t *enc, int typeid, const void *vptr, size_t len,
-                            size_t esize, encoder efunc)
+                            size_t esize, glme_encoder_f efunc)
 {
   size_t __at_start = enc->count;
 
@@ -297,7 +341,7 @@ int glme_encode_value_array(glme_buf_t *enc, int typeid, const void *vptr, size_
 }
 
 int glme_encode_array(glme_buf_t *enc, int typeid,
-                      const void *vptr, size_t len, size_t esize, encoder efunc)
+                      const void *vptr, size_t len, size_t esize, glme_encoder_f efunc)
 {
   size_t __at_start = enc->count;
 
@@ -343,7 +387,7 @@ int glme_encode_end_struct(glme_buf_t *gbuf)
 }
 
 int glme_encode_field(glme_buf_t *enc, int *delta, int typeid, int flags,
-                      const void *vptr, size_t nlen, size_t esize, encoder efunc)
+                      const void *vptr, size_t nlen, size_t esize, glme_encoder_f efunc)
 {
   int n;
   uint64_t __at_start = enc->count;
@@ -375,6 +419,10 @@ int glme_encode_field(glme_buf_t *enc, int *delta, int typeid, int flags,
   case GLME_INT:
   case GLME_UINT:
   case GLME_FLOAT:
+    if (!efunc) {
+      enc->last_error = GLME_E_NOENC;
+      return -1;
+    }
     if (flags & GLME_F_ARRAY) {
       // array of (int, uint, float)
       n = glme_encode_array(enc, typeid, vptr, nlen, esize, efunc);
@@ -392,6 +440,12 @@ int glme_encode_field(glme_buf_t *enc, int *delta, int typeid, int flags,
     break;
 
   default:
+    if (!efunc) {
+      if (!(efunc = glme_get_encoder(enc, typeid))) {
+        enc->last_error = GLME_E_NOENC;
+        return -1;
+      }
+    }
     if (flags & GLME_F_ARRAY) {
       n = glme_encode_array(enc, typeid, vptr, nlen, esize, efunc);
     } else {
@@ -407,7 +461,7 @@ int glme_encode_field(glme_buf_t *enc, int *delta, int typeid, int flags,
   return enc->count - __at_start;
 }
 
-int glme_encode_struct(glme_buf_t *enc, int typeid, const void *ptr, encoder efunc)
+int glme_encode_struct(glme_buf_t *enc, int typeid, const void *ptr, glme_encoder_f efunc)
 {
   int n;
   uint64_t __at_start = enc->count;
@@ -416,11 +470,17 @@ int glme_encode_struct(glme_buf_t *enc, int typeid, const void *ptr, encoder efu
   if (!ptr)
     return 0;
 
+  if (!efunc) {
+    // try to find encoder function
+    if (!(efunc = glme_get_encoder(enc, typeid))) {
+      enc->last_error = GLME_E_NOENC;
+      return -1;
+    }
+  }
+
   if (glme_encode_type(enc, typeid) < 0)
     return -1;
 
-  if (!efunc)
-    return -1;
   if ((n = (*efunc)(enc, ptr)) < 0)
     return n;
 
