@@ -47,6 +47,7 @@ int glme_decode_value_uint64(glme_buf_t *dec, uint64_t *v)
   n = gob_decode_uint64(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n < 0) {
     // under flow
+    dec->last_error = GLME_E_UFLOW;
     return n;
   }
   dec->current += n;
@@ -60,6 +61,7 @@ int glme_decode_peek_uint64(glme_buf_t *dec, uint64_t *v)
   n = gob_decode_uint64(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n < 0) {
     // under flow
+    dec->last_error = GLME_E_UFLOW;
     return n;
   }
   return n;
@@ -71,6 +73,7 @@ int glme_decode_value_int64(glme_buf_t *dec, int64_t *v)
   n = gob_decode_int64(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n < 0) {
     // under flow
+    dec->last_error = GLME_E_UFLOW;
     return -n;
   }
   dec->current += n;
@@ -83,6 +86,7 @@ int glme_decode_peek_int64(glme_buf_t *dec, int64_t *v)
   n = gob_decode_int64(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n < 0) {
     // under flow
+    dec->last_error = GLME_E_UFLOW;
     return -n;
   }
   return n;
@@ -148,6 +152,7 @@ int glme_decode_value_double(glme_buf_t *dec, double *v)
   n = gob_decode_double(v, &dec->buf[dec->current], dec->count-dec->current); 
   if (n < 0) {
     // under flow
+    dec->last_error = GLME_E_UFLOW;
     return -n;
   }
   dec->current += n;
@@ -160,6 +165,28 @@ int glme_decode_value_float(glme_buf_t *dec, float *v)
   double dv;
   n = glme_decode_value_double(dec, &dv);
   *v = n < 0 ? 0.0 : (float)dv;
+  return n;
+}
+
+int glme_decode_value_complex128(glme_buf_t *dec, double complex *v)
+{
+  int n;
+  n = gob_decode_complex128(v, &dec->buf[dec->current], dec->count-dec->current); 
+  if (n < 0) {
+    // under flow
+    dec->last_error = GLME_E_UFLOW;
+    return -n;
+  }
+  dec->current += n;
+  return n;
+}
+
+int glme_decode_value_complex64(glme_buf_t *dec, float complex *v)
+{
+  int n;
+  double complex dv;
+  n = glme_decode_value_complex128(dec, &dv);
+  *v = n < 0 ? 0.0 : (float complex)dv;
   return n;
 }
 
@@ -246,6 +273,22 @@ int glme_decode_float(glme_buf_t *dec, float *v)
   return n < 0 ? n : n+1;
 }
 
+int glme_decode_complex128(glme_buf_t *dec, double complex *v)
+{
+  if (__decode_base_type(dec, GLME_COMPLEX) < 0)
+    return -1;
+  int n = glme_decode_value_complex128(dec, v);
+  return n < 0 ? n : n+1;
+}
+
+int glme_decode_complex64(glme_buf_t *dec, float complex *v)
+{
+  if (__decode_base_type(dec, GLME_COMPLEX) < 0)
+    return -1;
+  int n = glme_decode_value_complex64(dec, v);
+  return n < 0 ? n : n+1;
+}
+
 // ------------------------------------------------------------------
 // byte array and string functions
 
@@ -256,18 +299,22 @@ int glme_decode_vector(glme_buf_t *dec, void *s, size_t len)
 
   // we accept BYTE arrays and STRINGs
   if (__peek_base_type(dec, GLME_VECTOR) < 0 &&
-      __peek_base_type(dec, GLME_STRING) < 0 )
+      __peek_base_type(dec, GLME_STRING) < 0 ) {
+    dec->last_error = GLME_E_TYPE;
     return -1;
+  }
 
   dec->current++;
 
   n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
   if (n < 0) {
     // underflow
+    dec->last_error = GLME_E_UFLOW;
     return n;
   }
   if (dlen > dec->count - dec->current - n) {
     // underflow
+    dec->last_error = GLME_E_UFLOW;
     return -(dlen+n);
   }
   // update current pointer;
@@ -289,14 +336,16 @@ int glme_decode_bytes(glme_buf_t *dec, void **s, size_t len)
   n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
   if (n < 0) {
     // underflow
+    dec->last_error = GLME_E_UFLOW;
     return n;
   }
   if (dlen > dec->count - dec->current - n) {
     // underflow
+    dec->last_error = GLME_E_UFLOW;
     return -(dlen+n);
   }
   if (len == 0) {
-    nb = malloc(dlen);
+    nb = glme_malloc(dec, dlen);
     if (nb) {
       memcpy(nb, &dec->buf[dec->current+n], dlen);
       *s = nb;
@@ -325,14 +374,16 @@ int glme_decode_string(glme_buf_t *dec, char **s)
   n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
   if (n < 0) {
     // underflow
+    dec->last_error = GLME_E_UFLOW;
     return n;
   }
   if (dlen > dec->count - dec->current - n) {
     // underflow
+    dec->last_error = GLME_E_UFLOW;
     return -(dlen+n);
   }
   *s = (char *)0;
-  nb = malloc(dlen+1);
+  nb = glme_malloc(dec, dlen+1);
   if (nb) {
     memcpy(nb, &dec->buf[dec->current+n], dlen);
     nb[dlen] = '\0';
@@ -382,7 +433,7 @@ int glme_decode_delta_test(glme_buf_t *dec, unsigned int delta)
 }
 
 int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags, 
-                      void *vptr, size_t *nlen, size_t esize, decoder dfunc)
+                      void *vptr, size_t *nlen, size_t esize, glme_decoder_f dfunc)
 {
   int n, elemtype, typeid;
   uint64_t offset, alen, __at_start = dec->current;
@@ -390,8 +441,10 @@ int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags
 
   // read offset at read pointer
   n = gob_decode_uint64(&offset, &dec->buf[dec->current], dec->count - dec->current);
-  if (n < 0)
+  if (n < 0) {
+    dec->last_error = GLME_E_UFLOW;
     return n;
+  }
 
   if (offset == 0 || *delta == 0) {
     // end of struct or we have already seen end of struct
@@ -404,26 +457,30 @@ int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags
     *delta += 1;
     return 0;
   }
-  // decode; set delta to 1, move read pointer and call decoder function
+  // decode; set delta to 1, move read pointer and call glme_decoder_f function
   dec->current += n;
   if (glme_decode_peek_type(dec, &typeid) < 0)
     return -1;
 
   if (typeid == GLME_ARRAY && (flags & GLME_F_ARRAY == 0)) {
     // not expecting array
-    return -3;
+    dec->last_error = GLME_E_TYPE;
+    return -1;
   }
   if (etype != 0 && typeid != GLME_ARRAY && typeid != etype) {
     // not this type
-    return -3;
+    dec->last_error = GLME_E_TYPE;
+    return -1;
   }
 
   switch (typeid) {
   case GLME_ARRAY:
     if ((n = glme_decode_array_start(dec, &typeid, &alen)) < 0)
       return n;
-    if (etype != 0 && typeid != etype)
+    if (etype != 0 && typeid != etype) {
+      dec->last_error = GLME_E_TYPE;
       return -1;
+    }
 
     // assume that we need to allocate array element space
     nptr = (void *)0;
@@ -460,22 +517,43 @@ int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags
   case GLME_UINT:
   case GLME_FLOAT:
   case GLME_COMPLEX:
+    if (!dfunc) {
+      dec->last_error = GLME_E_NODEC;
+      return -1;
+    }
     n = (*dfunc)(dec, vptr);
     break;
 
   default:
     if ((n = glme_decode_type(dec, &typeid)) < 0)
       return n;
-    if (etype != 0 && etype != typeid)
-      return -3;
+    if (etype != 0 && etype != typeid) {
+      dec->last_error = GLME_E_TYPE;
+      return -1;
+    }
     // embedded structure  or structure pointer
     if (flags & GLME_F_PTR) {
       // vptr is pointer to pointer (void **);
-      nptr = malloc(esize);
-      if (! nptr)
+      if (esize == 0) {
+        if ((esize = glme_get_typesize(dec, typeid)) == 0) {
+          dec->last_error = GLME_E_NOSIZE;
+          return -1;
+        }
+      }
+      nptr = glme_malloc(dec, esize);
+      if (! nptr) {
+        dec->last_error = GLME_E_NOMEM;
         return -1;
+      }
     } else {
       nptr = vptr;
+    }
+    if (!dfunc) {
+      dfunc = glme_get_decoder(dec, typeid);
+      if (!dfunc) {
+        dec->last_error = GLME_E_NODEC;
+        return -1;
+      }
     }
     if ((n = (*dfunc)(dec, nptr)) < 0) {
       // if we have allocated memory, release it.
@@ -496,10 +574,11 @@ int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags
 }
 
 
-int glme_decode_struct(glme_buf_t *dec, int typeid, void *dptr, decoder dfunc)
+int glme_decode_struct(glme_buf_t *dec, int typeid, void **dptr, size_t esize, glme_decoder_f dfunc)
 {
   uint64_t __at_start = dec->current;
   int n, typ;
+  void *nptr, *sptr = (*dptr);
 
   if (! dfunc)
     return -1;
@@ -508,26 +587,73 @@ int glme_decode_struct(glme_buf_t *dec, int typeid, void *dptr, decoder dfunc)
     return -1;
 
   // if specified type id is non-zero check decoded id.
-  if (typeid != 0 && typ != typeid)
-    return -3;
+  if (typeid != 0 && typ != typeid) {
+    dec->last_error = GLME_E_TYPE;
+    return -1;
+  }
 
-  if ((n = (*dfunc)(dec, dptr) ) < 0)
+  if (!dfunc) {
+    // try to find decoder function
+    if (!(dfunc = glme_get_decoder(dec, typeid))) {
+      dec->last_error = GLME_E_NODEC;
+      return -1;
+    }
+  }
+
+  nptr = sptr;
+  if (!sptr) {
+    // allocate space
+    if (esize == 0 && (esize = glme_get_typesize(dec, typ)) == 0) {
+      dec->last_error = GLME_E_NOSIZE;
+      return -1;
+    }
+    nptr = glme_malloc(dec, esize);
+    if (!nptr) {
+      dec->last_error = GLME_E_NOMEM;
+      return -1;
+    }
+  }
+  if ((n = (*dfunc)(dec, nptr) ) < 0) {
+    if (!sptr)
+      glme_free(dec, nptr);
     return n;
-
+  }
+  if (!sptr)
+    *dptr = nptr;
   return dec->current - __at_start;
 }
 
-int glme_decode_value_struct(glme_buf_t *dec, void *dptr, decoder dfunc)
+int glme_decode_value_struct(glme_buf_t *dec, void **dptr, size_t esize, glme_decoder_f dfunc)
 {
   uint64_t __at_start = dec->current;
   int n;
+  void *nptr, *sptr = (*dptr);
 
-  if (! dfunc)
+  if (!dfunc) {
+    dec->last_error = GLME_E_NODEC;
     return -1;
+  }
 
-  if ((n = (*dfunc)(dec, dptr) ) < 0)
+  nptr = sptr;
+  if (!sptr) {
+    if (esize == 0) {
+      dec->last_error = GLME_E_NOSIZE;
+      return -1;
+    }
+    nptr = glme_malloc(dec, esize);
+    if (!nptr) {
+      dec->last_error = GLME_E_NOMEM;
+      return -1;
+    }
+  }
+  // decode
+  if ((n = (*dfunc)(dec, nptr) ) < 0) {
+    if (!sptr)
+      glme_free(dec, nptr);
     return n;
-
+  }
+  if (!sptr)
+    *dptr = nptr;
   return dec->current - __at_start;
 }
 
@@ -584,7 +710,7 @@ int glme_decode_array_header(glme_buf_t *dec, int *typeid, size_t *len)
 }
 
 int glme_decode_array_data(glme_buf_t *dec, void **dst,
-                           size_t len, size_t esize, decoder func)
+                           size_t len, size_t esize, glme_decoder_f func)
 {
   char *ptr = (char *)(*dst);
   int k, n;
@@ -594,7 +720,7 @@ int glme_decode_array_data(glme_buf_t *dec, void **dst,
     return 0;
 
   if (! ptr) {
-    ptr = (char *)calloc(len, esize);
+    ptr = (char *)glme_calloc(dec, len, esize);
     if (! ptr)
       return -1; 
     *(char **)dst = ptr;
@@ -608,7 +734,7 @@ int glme_decode_array_data(glme_buf_t *dec, void **dst,
 
 // decode full array
 int glme_decode_array(glme_buf_t *dec, int *typeid, void **dst,
-                      size_t *len, size_t esize, decoder dfunc)
+                      size_t *len, size_t esize, glme_decoder_f dfunc)
 {
   size_t alen;
   uint64_t __at_start = dec->current;
@@ -631,7 +757,7 @@ int glme_decode_array(glme_buf_t *dec, int *typeid, void **dst,
 
 // decode array value (Array sans ARRAY typeid)
 int glme_decode_value_array(glme_buf_t *dec, int *typeid, void **dst,
-                            size_t *len, size_t esize, decoder dfunc)
+                            size_t *len, size_t esize, glme_decoder_f dfunc)
 {
   size_t alen;
   uint64_t __at_start = dec->current;
