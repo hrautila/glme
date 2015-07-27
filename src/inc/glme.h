@@ -1,24 +1,54 @@
+/*
+ * Copyright (c)  Harri Rautila, 2015
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without 
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *    * Redistributions of source code must retain the above copyright notice, 
+ *      this list of conditions and the following disclaimer.
+ *    * Redistributions in binary form must reproduce the above copyright notice,
+ *      this list of conditions and the following disclaimer in the documentation
+ *      and/or other materials provided with the distribution.
+ *    * Neither the name of the Authors nor the names of its contributors
+ *      may be used to endorse or promote products derived from this software
+ *      without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE 
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-// Copyright (c) Harri Rautila, 2015
-
-// GLME is Gob Like Message
+// GLME is Gob Like Message Encoding
 
 #ifndef __GLME_H
 #define __GLME_H
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <complex.h>
 
-#ifndef __INLINE__
-#define __INLINE__ extern inline
+// for inline base functions (see glme.c)
+#ifndef __GLME_INLINE__
+#define __GLME_INLINE__ extern inline
 #endif
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
   enum glme_types {
+    GLME_ANY            = 0,
     GLME_BOOLEAN        = 1,
     GLME_INT            = 2,
     GLME_UINT           = 3,
@@ -30,7 +60,8 @@ extern "C" {
     GLME_MAP            = 11, /* Reserved */
     GLME_NAMED_STRUCT   = 12, /* Reserved */
     GLME_NAMED_MAP      = 13, /* Reserved */
-    GLME_BASE_MAX       = 15
+    GLME_BASE_MAX       = 15, /* */
+    GLME_USER_MIN       = 16  /* first user available type id */
   };
 
   enum glme_flags {
@@ -41,26 +72,230 @@ extern "C" {
 
   /* Not yet used, needs some thought. */
   enum glme_errors {
-    GLME_E_INPUT = -1,
-    GLME_E_INVAL = -2,
-    GLME_E_TYPE  = -3
+    GLME_E_INPUT  = -1,
+    GLME_E_INVAL  = -2,
+    GLME_E_TYPE   = -3,
+    GLME_E_NOENC  = -4,
+    GLME_E_NODEC  = -5,
+    GLME_E_NOSIZE = -6,
+    GLME_E_NOMEM  = -7,
+    GLME_E_UFLOW  = -8,
+    GLME_E_OFLOW  = -9
   };
+
+// forward spec
+typedef struct glme_base_s glme_base_t;
 
 /**
  * Gob Like Message Encoding buffer
  */
 typedef struct glme_buf_s {
-  char *buf;
-  size_t buflen;	// size of buffer in bytes
-  size_t count;		// number of bytes writen into the buffer (count <= buflen)
-  size_t current;	// current read pointer (current <= count <= buflen)
-  int owner;
-  void *user;           // Pointer to user context for encoding/decoding functions.
+  char *buf;            //   Data buffer
+  size_t buflen;	//   Size of buffer in bytes
+  size_t count;		//   Number of bytes writen into the buffer (count <= buflen)
+  size_t current;	//   Current read pointer (current <= count <= buflen)
+  int owner;            //   Buffer owner flag
+  void *user;           ///< User context for encoding/decoding functions.
+  glme_base_t *base;    ///< Encoder/decoder registry
+  int last_error;       ///< Last error 
 } glme_buf_t;
 
 
-typedef int (*encoder)(glme_buf_t *, const void *);
-typedef int (*decoder)(glme_buf_t *, void *);
+typedef int (*glme_encoder_f)(glme_buf_t *, const void *);
+typedef int (*glme_decoder_f)(glme_buf_t *, void *);
+
+typedef struct glme_spec_s
+{
+  int typeid;
+  size_t size;         // sizeof(<struct message>)
+  glme_encoder_f encoder;
+  glme_decoder_f decoder;
+} glme_spec_t;
+
+/**
+ * User defined memory allocation functions.
+ */
+typedef struct glme_allocator_s
+{
+  void *(*malloc)(size_t);              ///< Allocate memory
+  void (*free)(void *);                 ///< Release memory function
+  void *(*realloc)(void *, size_t);     ///< Reallocation
+  void *(*calloc)(size_t, size_t);      ///< Allocation in blocks
+} glme_allocator_t;
+
+/**
+ * Handler base
+ */
+struct glme_base_s
+{
+  void *(*malloc)(size_t);
+  void (*free)(void *);
+  void *(*realloc)(void *, size_t);
+  void *(*calloc)(size_t, size_t);
+  unsigned int nelem;
+  glme_spec_t *handlers;
+  int owner;
+};
+
+
+// ---------------------------------------------------------------------
+// Type specific encoder/decoder function spec.
+
+/**
+ * Initialize type encoder/decoder specification.
+ */
+__GLME_INLINE__
+glme_spec_t *glme_spec_init(glme_spec_t *spec, int typeid,
+                            glme_encoder_f encoder, glme_decoder_f decoder, size_t size)
+{
+  *spec = (glme_spec_t){typeid, size, encoder, decoder};
+  return spec;
+}
+
+// ---------------------------------------------------------------------
+// Handler base for registered typeids.
+
+
+/**
+ * Initialize handler base.
+ *
+ * @param base
+ *   Handler base.
+ * @param specs
+ *   Array of encoder/decoder specs. May be null.
+ * @param nlem
+ *   Number of elements in handler array. If spec is null then space will allocated
+ *   for nelem entries.
+ * @param alloc
+ *   Optional memory allocator functions. If not provided standard system functios
+ *   are used.
+ */
+extern void glme_base_init(glme_base_t *base, glme_spec_t *specs, unsigned int nelem,
+                           glme_allocator_t *alloc);
+
+extern glme_spec_t *glme_base_find(glme_base_t *base, int typeid);
+
+/**
+ * Register typeid handlers.
+ */
+  extern int glme_base_register(glme_base_t *base, glme_spec_t *spec);
+/**
+ * Unregister typeid handlers.
+ */
+extern void glme_base_unregister(glme_base_t *base, int typeid);
+
+/**
+ * Release handler table if allocated at initialization.
+ */
+__GLME_INLINE__
+void glme_base_release(glme_base_t *base)
+{
+  if (base && base->owner) 
+    free(base->handlers);
+}
+
+
+/**
+ * Get spec for typeid.
+ */
+__GLME_INLINE__
+glme_spec_t *glme_get_spec(glme_buf_t *gb, int typeid)
+{
+  return glme_base_find(gb->base, typeid);
+}
+
+/**
+ * Get element size for typeid.
+ */
+__GLME_INLINE__
+size_t glme_get_typesize(glme_buf_t *gb, int typeid)
+{
+  glme_spec_t *s = glme_base_find(gb->base, typeid);
+  return s ? s->size : 0;
+}
+
+/**
+ * Find encoder function for typeid.
+ */
+__GLME_INLINE__
+glme_encoder_f glme_get_encoder(glme_buf_t *gb, int typeid)
+{
+  glme_spec_t *s = glme_base_find(gb->base, typeid);
+  return s ? s->encoder : (glme_encoder_f)0;
+}
+
+/**
+ * Find decoder function for typeid.
+ */
+__GLME_INLINE__
+glme_decoder_f glme_get_decoder(glme_buf_t *gb, int typeid)
+{
+  glme_spec_t *s = glme_base_find(gb->base, typeid);
+  return s ? s->decoder : (glme_decoder_f)0;
+}
+
+/**
+ * Allocate memory nbyt bytes of memory.
+ */
+__GLME_INLINE__
+void *glme_malloc(glme_buf_t *gb, size_t nbyt)
+{
+  return gb->base && gb->base->malloc
+    ? (*gb->base->malloc)(nbyt)
+    : malloc(nbyt);
+}
+
+/**
+ * Reallocate memory pointed by ptr to new size of nbyt bytes.
+ */
+__GLME_INLINE__
+void *glme_realloc(glme_buf_t *gb, void *ptr, size_t nbyt)
+{
+  return gb->base && gb->base->realloc
+    ? (*gb->base->realloc)(ptr, nbyt)
+    : realloc(ptr, nbyt);
+}
+
+/**
+ * Allocate memory block of size nelem*nbyt bytes.
+ */
+__GLME_INLINE__
+void *glme_calloc(glme_buf_t *gb, size_t nelem, size_t nbyt)
+{
+  return gb->base && gb->base->calloc
+    ? (*gb->base->calloc)(nelem, nbyt)
+    : calloc(nelem, nbyt);
+}
+
+/**
+ * Free memory ptr points to.
+ */
+__GLME_INLINE__
+void glme_free(glme_buf_t *gb, void *ptr)
+{
+  if (gb->base && gb->base->free)
+    (*gb->base->free)(ptr);
+  else
+    free(ptr);
+}
+
+/**
+ * Allocate space for typeid object.
+ */
+__GLME_INLINE__
+void *glme_type_new(glme_buf_t *gb, int typeid)
+{
+  glme_spec_t *s = glme_get_spec(gb, typeid);
+  if (!s || s->size == 0)
+    return (void *)0;
+  return glme_malloc(gb, s->size);
+}
+
+
+// ---------------------------------------------------------------------
+// GLME base functions.
+
+
 
 /**
  * Initialize the specified gbuf with space of len bytes.
@@ -73,7 +308,28 @@ typedef int (*decoder)(glme_buf_t *, void *);
  * @return
  *   Initialized buffer.
  */
-extern glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len);
+__GLME_INLINE__
+glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len)
+{
+  if (gbuf) {
+    gbuf->count = gbuf->current = 0;
+    gbuf->buflen = gbuf->owner = 0;
+    // allow initialization to zero size
+    if (len > 0) {
+      gbuf->buf = malloc(len);
+      if (! gbuf->buf)
+	return (glme_buf_t *)0;
+      gbuf->owner = 1;
+    } else {
+      gbuf->buf = (char *)0;
+    }
+    gbuf->buflen = gbuf->buf ? len : 0;
+    gbuf->user = (void *)0;
+    gbuf->base = (glme_base_t *)0;
+    gbuf->last_error = 0;
+  }
+  return gbuf;
+}
 
 /**
  * Make glme_buf from spesified data buffer.
@@ -89,43 +345,61 @@ extern glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len);
  * @return
  *   Initialized glme_buf.
  */
-extern glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count);
-
-/**
- * Create new glme_buf with buffer space of len bytes.
- *
- * @param len
- *   Requested initial buffer space in bytes.
- *
- * @return
- *   New initialized glme_buf.
- */
-extern glme_buf_t *glme_buf_new(size_t len);
+__GLME_INLINE__
+glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count)
+{
+  gbuf->buf = data;
+  gbuf->buflen = len;
+  gbuf->count = count;
+  gbuf->current = 0;
+  gbuf->owner = 0;
+  return gbuf;
+}
 
 /**
  * Close the glme_buf. Releases allocated buffer and reset read pointers.
  */
-extern void glme_buf_close(glme_buf_t *gbuf);
-
-/**
- * Release the glme_buf.
- */
-extern void glme_buf_free(glme_buf_t *gbuf);
+__GLME_INLINE__
+void glme_buf_close(glme_buf_t *gbuf)
+{
+  if (gbuf) {
+    if (gbuf->buf && gbuf->owner)
+      glme_free(gbuf, gbuf->buf);
+    gbuf->buf = (char *)0;
+    gbuf->buflen = 0;
+    gbuf->count = 0;
+    gbuf->current = 0;
+  }
+}
 
 /**
  * Reset glme_buf read pointer.
  */
-extern void glme_buf_reset(glme_buf_t *gbuf);
+__GLME_INLINE__
+void glme_buf_reset(glme_buf_t *gbuf)
+{
+  if (gbuf)
+    gbuf->current = 0;
+}
 
 /**
  * Get glme_buf read pointer.
  */
-extern size_t glme_buf_at(glme_buf_t *gbuf);
+__GLME_INLINE__
+size_t glme_buf_at(glme_buf_t *gbuf)
+{
+  return gbuf ? gbuf->current : 0;
+}
 
 /**
  * Set glme_buf read pointer.
  */
-extern void glme_buf_seek(glme_buf_t *gbuf, size_t pos);
+__GLME_INLINE__
+void glme_buf_seek(glme_buf_t *gbuf, size_t pos)
+{
+  if (gbuf)  
+    gbuf->current = pos < gbuf->count ? pos : gbuf->count;
+}
 
 /**
  * Pushback read pointer.
@@ -135,22 +409,62 @@ extern void glme_buf_pushback(glme_buf_t *gbuf, size_t n);
 /**
  * Clear glme_buf contents.
  */
-extern void glme_buf_clear(glme_buf_t *gbuf);
+__GLME_INLINE__
+void glme_buf_clear(glme_buf_t *gbuf)
+{
+  if (gbuf) {
+    gbuf->count = gbuf->current = 0;
+  }
+}
 
 /**
  * Get content
  */
-extern char *glme_buf_data(glme_buf_t *gbuf);
+__GLME_INLINE__
+char *glme_buf_data(glme_buf_t *gbuf)
+{
+  return gbuf ? gbuf->buf : (char *)0;
+}
 
 /**
  * Get encoded content length.
  */
-extern size_t glme_buf_len(glme_buf_t *gbuf);
+__GLME_INLINE__
+size_t glme_buf_len(glme_buf_t *gbuf)
+{
+  return gbuf ? gbuf->count : 0;
+}
 
 /**
  * Get size.
  */
-extern size_t glme_buf_size(glme_buf_t *gbuf);
+__GLME_INLINE__
+size_t glme_buf_size(glme_buf_t *gbuf)
+{
+  return gbuf ? gbuf->buflen : 0;
+}
+
+/**
+ * Disown glme_buf allocated space.
+ */
+__GLME_INLINE__
+void glme_buf_disown(glme_buf_t *gbuf)
+{
+  if (gbuf)
+    gbuf->owner = 0;
+}
+
+/**
+ * Own glme_buf allocated space.
+ */
+__GLME_INLINE__
+void glme_buf_own(glme_buf_t *gbuf)
+{
+  if (gbuf)
+    gbuf->owner = 1;
+}
+
+
 
 /**
  * Read length prefix message from file descriptor to spesified buffer.
@@ -182,15 +496,6 @@ extern int glme_buf_writem(glme_buf_t *gbuf, int fd);
  */
 extern size_t glme_buf_resize(glme_buf_t *gbuf, size_t increase);
 
-/**
- * Disown glme_buf allocated space.
- */
-extern void glme_buf_disown(glme_buf_t *gbuf);
-
-/**
- * Own glme_buf allocated space.
- */
-extern void glme_buf_own(glme_buf_t *gbuf);
 
 
 /**
@@ -223,6 +528,14 @@ extern int glme_encode_value_int64(glme_buf_t *gbuf, const int64_t *v);
  */
 extern int glme_encode_double(glme_buf_t *gbuf, const double *v);
 extern int glme_encode_value_double(glme_buf_t *gbuf, const double *v);
+
+/**
+ * Encode double precision complex number into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+extern int glme_encode_complex128(glme_buf_t *gbuf, const double complex *v);
+extern int glme_encode_value_complex128(glme_buf_t *gbuf, const double complex *v);
 
 
 /**
@@ -266,6 +579,14 @@ extern int glme_encode_float(glme_buf_t *gbuf, const float *v);
 extern int glme_encode_value_float(glme_buf_t *gbuf, const float *v);
 
 /**
+ * Encode single precision complex into the specified buffer.
+ *
+ * @see glme_encode_uint64
+ */
+extern int glme_encode_complex64(glme_buf_t *gbuf, const float complex *v);
+extern int glme_encode_value_complex64(glme_buf_t *gbuf, const float complex *v);
+
+/**
  * Encode uninterpreted byte stream value into the specified buffer.
  *
  * @see glme_encode_uint64
@@ -299,7 +620,7 @@ extern int glme_encode_array_header(glme_buf_t *gbuf, int typeid, size_t sz);
  * @param  efunc  Element value encoding function
  */
 extern int glme_encode_array_data(glme_buf_t *enc, const void *vptr,
-                                  size_t len, size_t esize, encoder efunc);
+                                  size_t len, size_t esize, glme_encoder_f efunc);
 
 /**
  * Encode array with given element type into the specified buffer.
@@ -315,9 +636,9 @@ extern int glme_encode_array_data(glme_buf_t *enc, const void *vptr,
  *    Negative error code or number of bytes writen to encode buffer.
  */
 extern int glme_encode_array(glme_buf_t *gbuf, int typeid, const void *vptr,
-                             size_t len, size_t esize, encoder efunc);
+                             size_t len, size_t esize, glme_encoder_f efunc);
 extern int glme_encode_value_array(glme_buf_t *enc, int typeid, const void *vptr,
-                                   size_t len,  size_t esize, encoder efunc);
+                                   size_t len,  size_t esize, glme_encoder_f efunc);
 
 /**
  * Encode struct start into the specified buffer.
@@ -340,7 +661,7 @@ extern int glme_encode_start_struct(glme_buf_t *gbuf, int *delta);
  *
  */
 extern int glme_encode_field(glme_buf_t *gbuf, int *delta, int typeid, int flags,
-                             const void *vptr, size_t nlen, size_t esize, encoder efunc);
+                             const void *vptr, size_t nlen, size_t esize, glme_encoder_f efunc);
 
 /**
  * Encode structure end mark into the specified buffer.
@@ -350,7 +671,7 @@ extern int glme_encode_end_struct(glme_buf_t *gbuf);
 /**
  * Encode structure into the specified buffer.
  */
-extern int glme_encode_struct(glme_buf_t *enc, int typeid, const void *ptr, encoder efunc);
+extern int glme_encode_struct(glme_buf_t *enc, int typeid, const void *ptr, glme_encoder_f efunc);
 
 /**
  * Encode type id into the specified buffer.
@@ -413,6 +734,21 @@ extern int glme_decode_value_double(glme_buf_t *dec, double *v);
 
 extern int glme_decode_float(glme_buf_t *dec, float *v);
 extern int glme_decode_value_float(glme_buf_t *dec, float *v);
+
+/**
+ * Decode double precision IEEE complex type or valuer from the
+ * specified decoder.
+ *
+ * @param dec
+ *   Decoder
+ * @param v
+ *   Pointer to value store location.
+ */
+extern int glme_decode_complex128(glme_buf_t *dec, double complex *v);
+extern int glme_decode_value_complex128(glme_buf_t *dec, double complex *v);
+
+extern int glme_decode_complex64(glme_buf_t *dec, float complex *v);
+extern int glme_decode_value_complex64(glme_buf_t *dec, float complex *v);
 
 
 /**
@@ -518,7 +854,7 @@ extern int glme_decode_field_id(glme_buf_t *dec, int *next, int cur);
  *    Number of bytes consumed or negative error number.
  */
 extern int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int typeid, int flags,
-                             void *vptr, size_t *nlen, size_t esize, decoder dfunc);
+                             void *vptr, size_t *nlen, size_t esize, glme_decoder_f dfunc);
 
 /**
  * Initialize structure decoder
@@ -531,13 +867,46 @@ extern int glme_decode_end_struct(glme_buf_t *dec);
 
 /**
  * Read structure type from the specified buffer.
+ *
+ * @param dec
+ *   Decoder
+ * @param typeid
+ *   Type id of expected structure. 
+ * @param dptr
+ *   Pointer to structure pointer. If structure pointer is null space is allocated for the structure.
+ * @param esize
+ *   Structure size in bytes
+ * @param dfunc
+ *   Decoder function
+ *
+ * If expected type id is non-zero then decoded type id is checked and error reported if they do not
+ * match. If structure pointer is null then esize bytes of memory is allocated to hold the
+ * decoded structure.  If esize is zero then type size for the decoded type id is looked up from
+ * internal type registery. If lookup fails then error is returned. Likewise if decoder function
+ * is null it is looked up from the registery and error is returned if decoder function not found.
+ *
+ * @return
+ *   Number of bytes consumed or negative error code.
  */
-extern int glme_decode_struct(glme_buf_t *dec, int typeid, void *dptr, decoder dfunc);
+extern int glme_decode_struct(glme_buf_t *dec, int typeid, void **dptr, size_t esize, glme_decoder_f dfunc);
 
 /**
  * Read structure value from the specified buffer.
+ *
+ * @param dec
+ *   Decoder
+ * @param dptr
+ *   Pointer to structure pointer. If structure pointer is null space is allocated and esize
+ *   parameter must be non-zero. 
+ * @param esize
+ *   Structure size in bytes
+ * @param dfunc
+ *   Decoder function, must not be null.
+ *
+ * @return
+ *   Number of bytes consumed or negative error code.
  */
-extern int glme_decode_value_struct(glme_buf_t *dec, void *dptr, decoder dfunc);
+extern int glme_decode_value_struct(glme_buf_t *dec, void **dptr, size_t esize, glme_decoder_f dfunc);
 
 /**
  * Read start of array from the specified decoder.
@@ -566,19 +935,19 @@ extern int glme_decode_array_header(glme_buf_t *dec, int *typeid, size_t *len);
  *   Number of bytes read or negative error code.
  */
 extern int glme_decode_array_data(glme_buf_t *dec, void **dst,
-                                  size_t len, size_t esize, decoder func);
+                                  size_t len, size_t esize, glme_decoder_f func);
 
 /**
  * Read array from the specified buffer.
  */
 extern int glme_decode_array(glme_buf_t *dec, int *typeid, void **dst,
-                             size_t *len, size_t esize, decoder func);
+                             size_t *len, size_t esize, glme_decoder_f func);
 
 /**
  * Read array value from the specified buffer. (Array sans ARRAY typeid)
  */
 extern int glme_decode_value_array(glme_buf_t *dec, int *typeid, void **dst,
-                                   size_t *len, size_t esize, decoder func);
+                                   size_t *len, size_t esize, glme_decoder_f func);
 
 /**
  * Read type id from the specified buffer.
@@ -638,13 +1007,13 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
  * @param elem   Signed integer element
  * @param defval Default value, field omitted if it's value is equal to defval
  */
-#define GLME_ENCODE_FLD_INT(enc, elem, defval)                      \
-  do {                                                              \
-    int64_t __i64 = (int64_t)(elem);                                \
-    __ne = (elem) != defval;                                        \
-    __e = glme_encode_field(enc, &__delta, GLME_INT, 0, &__i64, 0,  \
-                            __ne, (encoder)glme_encode_int64);      \
-    if (__e < 0) return __e;                                        \
+#define GLME_ENCODE_FLD_INT(enc, elem, defval)                        \
+  do {                                                                \
+    int64_t __i64 = (int64_t)(elem);                                  \
+    __ne = (elem) != defval;                                          \
+    __e = glme_encode_field(enc, &__delta, GLME_INT, 0, &__i64, 0,    \
+                            __ne, (glme_encoder_f)glme_encode_int64); \
+    if (__e < 0) return __e;                                          \
   } while (0)
 
 /**
@@ -659,7 +1028,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     uint64_t __u64 = (uint64_t)(elem);                              \
     __ne = (elem) != defval;                                        \
     __e = glme_encode_field(enc, &__delta, GLME_UINT, 0, &__u64, 0, \
-                            __ne, (encoder)glme_encode_uint64);     \
+                            __ne, (glme_encoder_f)glme_encode_uint64);     \
     if (__e < 0) return __e;                                        \
   } while (0)
 
@@ -676,7 +1045,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     double __f64 = (double)(elem);                                   \
     __ne = (elem) != defval;                                         \
     __e = glme_encode_field(enc, &__delta, GLME_FLOAT, 0, &__f64, 0, \
-                            __ne, (encoder)glme_encode_double);      \
+                            __ne, (glme_encoder_f)glme_encode_double);      \
     if (__e < 0) return __e;                                         \
   } while (0)
 
@@ -690,7 +1059,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
 #define GLME_ENCODE_FLD_STRING(enc, elem)                  \
   do {                                                     \
     __e = glme_encode_field(enc, &__delta, GLME_STRING, 0, \
-                            (elem), 0, 1, (encoder)0);     \
+                            (elem), 0, 1, (glme_encoder_f)0);     \
     if (__e < 0) return __e;                               \
   } while (0)
 
@@ -705,7 +1074,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                        \
     __ne = (len) > 0 ? 1 : 0;                                 \
     __e = glme_encode_field(enc, &__delta, GLME_VECTOR, 0,    \
-                            (elem), (len), __ne, (encoder)0); \
+                            (elem), (len), __ne, (glme_encoder_f)0); \
     if (__e < 0) return __e;                                  \
   } while (0)
 
@@ -757,7 +1126,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
       __e = glme_encode_field(enc, &__delta,                    \
                               GLME_INT, GLME_F_ARRAY,           \
                               (elem), (len), sizeof((elem)[0]), \
-                              (encoder)vfunc);                  \
+                              (glme_encoder_f)vfunc);                  \
       if (__e < 0) return __e;                                  \
   } while (0)
 
@@ -767,7 +1136,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     __e = glme_encode_field(enc, &__delta,                      \
                             GLME_INT, GLME_F_ARRAY,             \
                             (elem), __nl, sizeof((elem)[0]),    \
-                            (encoder)vfunc);                    \
+                            (glme_encoder_f)vfunc);                    \
     if (__e < 0) return __e;                                    \
   } while (0)
 
@@ -784,7 +1153,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
       __e = glme_encode_field(enc, &__delta,                    \
                               GLME_UINT, GLME_F_ARRAY,          \
                               (elem), (len), sizeof((elem)[0]), \
-                              (encoder)vfunc);                  \
+                              (glme_encoder_f)vfunc);                  \
       if (__e < 0) return __e;                                  \
   } while (0)
 
@@ -794,7 +1163,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     __e = glme_encode_field(enc, &__delta,                      \
                             GLME_UINT, GLME_F_ARRAY,           \
                             (elem), __nl, sizeof((elem)[0]),    \
-                            (encoder)vfunc);                    \
+                            (glme_encoder_f)vfunc);                    \
     if (__e < 0) return __e;                                    \
   } while (0)
 
@@ -810,7 +1179,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
       __e = glme_encode_field(enc, &__delta,                    \
                               GLME_FLOAT, GLME_F_ARRAY,        \
                               (elem), (len), sizeof((elem)[0]), \
-                              (encoder)vfunc);                  \
+                              (glme_encoder_f)vfunc);                  \
       if (__e < 0) return __e;                                  \
   } while (0)
 
@@ -820,7 +1189,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     __e = glme_encode_field(enc, &__delta,                      \
                             GLME_FLOAT, GLME_F_ARRAY,           \
                             (elem), __nl, sizeof((elem)[0]),    \
-                            (encoder)vfunc);                    \
+                            (glme_encoder_f)vfunc);                    \
     if (__e < 0) return __e;                                    \
   } while (0)
 
@@ -897,7 +1266,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                             \
     int64_t __t = (int64_t)(defval);                               \
     __e = glme_decode_field(dec, &__delta, GLME_INT, 0, &__t,      \
-                            &__nl, 1, (decoder)glme_decode_int64); \
+                            &__nl, 1, (glme_decoder_f)glme_decode_int64); \
     if (__e < 0) return __e;                                       \
     (elem) = __t;                                                  \
   } while(0)
@@ -913,7 +1282,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                              \
     uint64_t __t = (uint64_t)(defval);                              \
     __e = glme_decode_field(dec, &__delta, GLME_UINT, 0, &__t,      \
-                            &__nl, 1, (decoder)glme_decode_uint64); \
+                            &__nl, 1, (glme_decoder_f)glme_decode_uint64); \
     if (__e < 0) return __e;                                        \
     (elem) = __t;                                                   \
   } while(0)
@@ -929,7 +1298,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                              \
     double __f = (double)(defval);                                  \
     __e = glme_decode_field(dec, &__delta, GLME_FLOAT, 0, &__f,     \
-                            &__nl, 1, (decoder)glme_decode_double); \
+                            &__nl, 1, (glme_decoder_f)glme_decode_double); \
     if (__e < 0) return __e;                                          \
     (elem) = __f;                                                     \
   } while(0)
@@ -945,7 +1314,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     void *__ptr = &(elem); __nl = sizeof(elem)/sizeof((elem)[0]);   \
     memset((elem), 0, sizeof(elem));                                \
     __e = glme_decode_field(dec, &__delta, GLME_VECTOR, 0,          \
-                          __ptr, &__nl, 1, (decoder)0);             \
+                          __ptr, &__nl, 1, (glme_decoder_f)0);             \
     if (__e < 0) return __e;                                        \
   } while(0)
 
@@ -960,7 +1329,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     void *__ptr = &(elem); __nl = 0;                                \
     (elem) = (char *)0;                                             \
     __e = glme_decode_field(dec, &__delta, GLME_STRING, 0,          \
-                            &(elem), &__nl, 1, (decoder)0);         \
+                            &(elem), &__nl, 1, (glme_decoder_f)0);         \
     if (__e < 0) return __e;                                        \
   } while(0)
 
@@ -977,7 +1346,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                                  \
     (elem) = (void *)0;                                                 \
     __e = glme_decode_field(dec, &__delta, typeid, GLME_F_PTR, &(elem), \
-                            0, sizeof((elem)[0]), (decoder)func);       \
+                            0, sizeof((elem)[0]), (glme_decoder_f)func);       \
     if (__e < 0) return __e;                                            \
   } while (0)
 
@@ -993,7 +1362,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                          \
     memset(&(elem), 0, sizeof(elem));                           \
     __e = glme_decode_field(dec, &__delta, typeid, 0, &(elem),  \
-                            0, sizeof(elem), (decoder)func);    \
+                            0, sizeof(elem), (glme_decoder_f)func);    \
     if (__e < 0) return __e;                                    \
   } while (0)
 
@@ -1010,7 +1379,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                                  \
     __flg = GLME_F_ARRAY|GLME_F_PTR; (len) =  0;                        \
     __e = glme_decode_field(dec, &__delta, GLME_INT, __flg, &(elem),    \
-                            &(len), sizeof((elem)[0]), (decoder)func);  \
+                            &(len), sizeof((elem)[0]), (glme_decoder_f)func);  \
     if (__e < 0) return __e;                                            \
   } while (0)
 
@@ -1029,7 +1398,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     memset((elem), 0, sizeof(elem));                                \
     __e = glme_decode_field(dec, &__delta, GLME_INT, GLME_F_ARRAY,  \
                             &(elem), &__nl, sizeof((elem)[0]),      \
-                            (decoder)func);                         \
+                            (glme_decoder_f)func);                         \
     if (__e < 0) return __e;                                        \
   } while (0)
 
@@ -1046,7 +1415,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                                  \
     __flg = GLME_F_ARRAY|GLME_F_PTR; (len) =  0;                        \
     __e = glme_decode_field(dec, &__delta, GLME_UINT, __flg, &(elem),   \
-                            &(len), sizeof((elem)[0]), (decoder)func);  \
+                            &(len), sizeof((elem)[0]), (glme_decoder_f)func);  \
     if (__e < 0) return __e;                                            \
   } while (0)
 
@@ -1064,7 +1433,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     memset((elem), 0, sizeof(elem));                                \
     __e = glme_decode_field(dec, &__delta, GLME_UINT, GLME_F_ARRAY, \
                             &(elem), &__nl, sizeof((elem)[0]),      \
-                            (decoder)func);                         \
+                            (glme_decoder_f)func);                         \
     if (__e < 0) return __e;                                        \
   } while (0)
 
@@ -1080,7 +1449,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
   do {                                                                 \
     __flg = GLME_F_ARRAY|GLME_F_PTR; (len) =  0;                       \
     __e = glme_decode_field(dec, &__delta, GLME_FLOAT, __flg, &(elem), \
-                            &(len), sizeof((elem)[0]), (decoder)func); \
+                            &(len), sizeof((elem)[0]), (glme_decoder_f)func); \
     if (__e < 0) return __e;                                           \
   } while (0)
 
@@ -1097,7 +1466,7 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
     memset((elem), 0, sizeof(elem));                                   \
     __e = glme_decode_field(dec, &__delta, GLME_FLOAT, GLME_F_ARRAY,   \
                             &__ptr, &__nl, sizeof((elem)[0]),          \
-                            (decoder)func);                            \
+                            (glme_decoder_f)func);                     \
     if (__e < 0) return __e;                                           \
   } while (0)
 
