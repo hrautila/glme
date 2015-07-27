@@ -6,117 +6,74 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#ifdef __GLME_INLINE__
+#undef __GLME_INLINE__
+#endif
+
+// define as empty
+#define __GLME_INLINE__
 
 #include "glme.h"
 
-glme_buf_t *glme_buf_init(glme_buf_t *gbuf, size_t len)
+/*
+ * We assume that number of encoder/decoder specs is relatively small and therefore
+ * use simple linear search. Alternatively could sort them in increasing order and
+ * use binary search.
+ */
+
+
+void glme_base_init(glme_base_t *base, glme_spec_t *specs, unsigned int nelem,
+                    glme_allocator_t *alloc)
 {
-  if (gbuf) {
-    gbuf->count = gbuf->current = 0;
-    gbuf->buflen = gbuf->owner = 0;
-    // allow initialization to zero size
-    if (len > 0) {
-      gbuf->buf = malloc(len);
-      if (! gbuf->buf)
-	return (glme_buf_t *)0;
-      gbuf->owner = 1;
-    } else {
-      gbuf->buf = (char *)0;
+  base->nelem = base->owner = 0;
+  if (specs) {
+    base->handlers = specs;
+    base->nelem = nelem;
+  } else if (nelem > 0) {
+    base->handlers = (glme_spec_t *)calloc(nelem, sizeof(glme_spec_t));
+    if (base->handlers) {
+      base->nelem = nelem;
+      base->owner = 1;
     }
-    gbuf->buflen = gbuf->buf ? len : 0;
-    gbuf->user = (void *)0;
   }
-  return gbuf;
+  base->malloc  = alloc && alloc->malloc  ? alloc->malloc  : malloc;
+  base->free    = alloc && alloc->free    ? alloc->free    : free;
+  base->realloc = alloc && alloc->realloc ? alloc->realloc : realloc;
+  base->calloc  = alloc && alloc->calloc  ? alloc->calloc  : calloc;
 }
 
-
-glme_buf_t *glme_buf_make(glme_buf_t *gbuf, char *data, size_t len, size_t count)
+glme_spec_t *glme_base_find(glme_base_t *base, int typeid)
 {
-  gbuf->buf = data;
-  gbuf->buflen = len;
-  gbuf->count = count;
-  gbuf->current = 0;
-  gbuf->owner = 0;
-  return gbuf;
-}
-
-
-glme_buf_t *glme_buf_new(size_t len)
-{
-  glme_buf_t *gbuf = malloc(sizeof(glme_buf_t));
-  if (gbuf)
-    return glme_buf_init(gbuf, len);
-  return (glme_buf_t *)0;
-}
-
-void glme_buf_close(glme_buf_t *gbuf)
-{
-  if (gbuf) {
-    if (gbuf->buf && gbuf->owner)
-      free(gbuf->buf);
-    gbuf->buf = (char *)0;
-    gbuf->buflen = 0;
-    gbuf->count = 0;
-    gbuf->current = 0;
+  int i;
+  if (!base)
+    return (glme_spec_t *)0;
+  for (i = 0; i < base->nelem; i++) {
+    if (typeid == base->handlers[i].typeid)
+      return &base->handlers[i];
   }
+  return (glme_spec_t *)0;
 }
 
-void glme_buf_free(glme_buf_t *gbuf)
+int glme_base_register(glme_base_t *base, glme_spec_t *spec)
 {
-  if (gbuf) {
-    if (gbuf->buf && gbuf->owner)
-      free(gbuf->buf);
-    gbuf->buflen = 0;
-    gbuf->count = 0;
-    gbuf->current = 0;
-    free(gbuf);
+  int i;
+  if (!base)
+    return -1;
+
+  for (i = 0; i < base->nelem; i++) {
+    if (base->handlers[i].typeid == 0) {
+      base->handlers[i] = *spec;
+      return i;
+    }
   }
+  return -1;
 }
 
-void glme_buf_reset(glme_buf_t *gbuf)
+void glme_base_unregister(glme_base_t *base, int typeid)
 {
-  if (gbuf)
-    gbuf->current = 0;
-}
-
-size_t glme_buf_at(glme_buf_t *gbuf)
-{
-  return gbuf ? gbuf->current : 0;
-}
-
-void glme_buf_seek(glme_buf_t *gbuf, size_t pos)
-{
-  if (gbuf)  
-    gbuf->current = pos < gbuf->count ? pos : gbuf->count;
-}
-
-void glme_buf_pushback(glme_buf_t *gbuf, size_t n)
-{
-  if (!gbuf)
-    return;
-  gbuf->current -= n > gbuf->current ? gbuf->current : n;
-}
-
-void glme_buf_clear(glme_buf_t *gbuf)
-{
-  if (gbuf) {
-    gbuf->count = gbuf->current = 0;
-  }
-}
-
-char *glme_buf_data(glme_buf_t *gbuf)
-{
-  return gbuf ? gbuf->buf : (char *)0;
-}
-
-size_t glme_buf_len(glme_buf_t *gbuf)
-{
-  return gbuf ? gbuf->count : 0;
-}
-
-size_t glme_buf_size(glme_buf_t *gbuf)
-{
-  return gbuf ? gbuf->buflen : 0;
+  glme_spec_t *spec = glme_base_find(base, typeid);
+  if (spec)
+    spec->typeid = 0;
 }
 
 
@@ -125,29 +82,17 @@ size_t glme_buf_resize(glme_buf_t *gbuf, size_t increase)
   // resize only of owner of the data buffer or if current size is zero
   // and owner is not set
   if (gbuf->owner == 1 || gbuf->buflen == 0) {
-    char *b = realloc(gbuf->buf, gbuf->buflen + increase);
+    char *b = glme_realloc(gbuf, gbuf->buf, gbuf->buflen + increase);
     if (b) {
       gbuf->buf = b;
       gbuf->buflen += increase;
       gbuf->owner = 1;
       return  gbuf->buflen;
     }
+    gbuf->last_error = GLME_E_NOMEM;
   }
   return 0;
 }
-
-void glme_buf_disown(glme_buf_t *gbuf)
-{
-  if (gbuf)
-    gbuf->owner = 0;
-}
-
-void glme_buf_own(glme_buf_t *gbuf)
-{
-  if (gbuf)
-    gbuf->owner = 1;
-}
-
 
 int glme_buf_writem(glme_buf_t *enc, int fd)
 {
