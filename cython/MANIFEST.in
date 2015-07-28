@@ -1,0 +1,6 @@
+include glme.pyx
+include glme.c gobber.c gobdec.c gobber.h
+include setup.py
+include test-simple.py
+include README.txt
+include LICENSE.txt
