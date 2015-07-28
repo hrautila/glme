@@ -1,5 +1,5 @@
 
-AM_CFLAGS = -O3 -march=native -fomit-frame-pointer -Iinc 
+AM_CFLAGS = -O3 -march=native -fomit-frame-pointer -Iinc -Wall
 
 lib_LTLIBRARIES = libglme.la
 
