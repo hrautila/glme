@@ -3,8 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include "../src/inc/gobber.h"
-//#include "gobdec.h"
+#include "gobber.h"
 
 typedef union decval_s {
   int64_t ival;

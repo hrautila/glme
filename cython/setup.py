@@ -11,25 +11,38 @@ except ImportError:
     use_cython = False
 else:
     use_cython = True
+ 
+## test if this is part of libglme source tree (../src/gobber.c exists)
+try:
+    os.stat('../src/gobber.c')
+except FileNotFoundError:
+    in_source_tree = False
+else:
+    in_source_tree = True
 
 ## We would like to have symlinks to ../src and ../src/inc but sdist tarball does not
 ## dereference symlinks. Python source distribution needs to have actual files so we
 ## keep local copy of gobber.c and gobber.h and track modification times.
-try:
-    if os.stat('gobber.c').st_mtime < os.stat('../src/gobber.c').st_mtime:
-        print('Update copy of ../src/gobber.c')
-        shutil.copy('../src/gobber.c', 'gobber.c')
-except FileNotFoundError:
-    print('Make local copy of ../src/gobber.c')
-    shutil.copy('../src/gobber.c', 'gobber.c')
 
-try:
-    if os.stat('gobber.h').st_mtime < os.stat('../src/inc/gobber.h').st_mtime:
-        print('Update copy of ../src/inc/gobber.h')
+if in_source_tree:
+    print('In source tree module build')
+    try:
+        if os.stat('gobber.c').st_mtime < os.stat('../src/gobber.c').st_mtime:
+            print('Update copy of ../src/gobber.c')
+            shutil.copy('../src/gobber.c', 'gobber.c')
+    except FileNotFoundError:
+        print('Make local copy of ../src/gobber.c')
+        shutil.copy('../src/gobber.c', 'gobber.c')
+
+    try:
+        if os.stat('gobber.h').st_mtime < os.stat('../src/inc/gobber.h').st_mtime:
+            print('Update copy of ../src/inc/gobber.h')
+            shutil.copy('../src/inc/gobber.h', 'gobber.h')
+    except FileNotFoundError:
+        print('Make local copy of ../src/inc/gobber.h')
         shutil.copy('../src/inc/gobber.h', 'gobber.h')
-except FileNotFoundError:
-    print('Make local copy of ../src/inc/gobber.h')
-    shutil.copy('../src/inc/gobber.h', 'gobber.h')
+else:
+    print('Standalone module setup and build')
 
 cmdclass = {}
 ext_modules = []
@@ -42,7 +55,6 @@ if use_cython:
         ]
     cmdclass.update({'build_ext': build_ext})
 
-    ## This will force updating glme.c file included in source dist
     class sdist(_sdist):
         def run(self):
             cythonize(['glme.pyx'])
