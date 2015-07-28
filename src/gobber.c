@@ -16,6 +16,12 @@
 
 #include "gobber.h"
 
+// 64bit floating point vs. unsigned 64bit int
+union _u {
+  uint64_t ul;
+  double ud;
+};
+
 /*
  * Encodes unsigned 64bit integer into the specified buffer.
  *
@@ -223,10 +229,12 @@ int gob_encode_bytes(char *buf, size_t buf_size, void *s, size_t len)
   return nbytes + len;
 }
 
+
 int gob_encode_double(char *buf, size_t buf_size, double v)
 {
-  uint64_t ul = __gob_flip_u64(*((uint64_t *)&v));
-  return __gob_encode_u64(buf, buf_size, ul);
+  union _u uu = { .ud = v };
+  uu.ul = __gob_flip_u64(uu.ul);
+  return __gob_encode_u64(buf, buf_size, uu.ul);
 }
 
 int gob_encode_complex128(char *buf, size_t buf_size, double complex v)
@@ -282,11 +290,11 @@ int gob_decode_int64(int64_t *v, char *buf, size_t buf_size)
 int gob_decode_double(double *v, char *buf, size_t buf_size)
 {
   int n;
-  uint64_t ull;
-  n = __gob_decode_u64(&ull, buf, buf_size);
+  union _u uu;
+  n = __gob_decode_u64(&uu.ul, buf, buf_size);
   if (n > 0) {
-    ull = __gob_flip_u64(ull);
-    *v = *((double *)&ull);
+    uu.ul = __gob_flip_u64(uu.ul);
+    *v = uu.ud;
   }
   return n;
 }
