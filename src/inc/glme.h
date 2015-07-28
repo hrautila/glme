@@ -1218,7 +1218,6 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
 #define GLME_ENCODE_FLD_END_ARRAY(enc, tag)   \
   __delta = 1;                                \
   __empty_array_ ## tag:                      \
-  // empty expression after label             \
   do {} while (0)
 
 // ----------------------------------------------------------------------------
@@ -1497,7 +1496,6 @@ extern int glme_decode_peek_type(glme_buf_t *dec, int *typeid);
  */
 #define GLME_DECODE_FLD_END_ARRAY(dec, id)          \
     __skip_array_ ## fno:			     \
-    // empty expression after label                  \
     do {} while (0)
     
 

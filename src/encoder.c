@@ -33,7 +33,7 @@ int __encode_base_type(glme_buf_t *enc, int id)
 
 int glme_encode_value_uint64(glme_buf_t *enc, const uint64_t *v)
 {
-  int n, rc = 0;
+  int n;
   if (!enc)
     return 0;
   n = gob_encode_uint64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
@@ -48,11 +48,10 @@ int glme_encode_value_uint64(glme_buf_t *enc, const uint64_t *v)
 
 int glme_encode_value_int64(glme_buf_t *enc, const int64_t *v)
 {
-  int n, rc = 0;
+  int n;
   if (!enc)
     return 0;
- retry:
-  n = gob_encode_int64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
+   n = gob_encode_int64(&enc->buf[enc->count], enc->buflen-enc->count, *v);
   if (n < 0) {
     if (glme_buf_resize(enc, enc->buflen < 1024 ? enc->buflen : 1024) == 0) {
       return -1;
@@ -238,7 +237,7 @@ int glme_encode_complex64(glme_buf_t *enc, const float complex *v)
 int glme_encode_bytes(glme_buf_t *enc, const void *v, size_t vlen)
 {
   char tmp[12];
-  int n, rc = 0;
+  int n;
   if (!enc)
     return 0;
 
@@ -411,7 +410,7 @@ int glme_encode_field(glme_buf_t *enc, int *delta, int typeid, int flags,
   }
   // what about zero length byte vector?? should it be omitted too?
 
-  if (glme_encode_value_uint(enc, delta) < 0)
+  if (glme_encode_value_uint(enc, (unsigned int *)&delta) < 0)
     return -1;
 
   // some simple type or structure

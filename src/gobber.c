@@ -48,8 +48,7 @@
 static inline
 int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
 {
-  int k, nbytes;
-  unsigned long long high;
+  int nbytes;
 
   if (ull < 128) {
     if (buf_size < 1) 
@@ -63,6 +62,7 @@ int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
   nbytes = (__bsrq(ull) >> 3) + 1;
 #else  
   // binary search for length
+  unsigned long long high;
   high = (ull >> 32);
   if ( high == 0 ) {
     // high bytes are zero; len <= 4
@@ -133,7 +133,7 @@ int __gob_encode_u64(char *buf, size_t buf_size, uint64_t ull)
 static inline
 int __gob_decode_u64(uint64_t *ull, char *buf, size_t buf_size)
 {
-  int k, nc, nbytes;
+  int nbytes;
   uint64_t ulval = 0;
 
   *ull = 0;
@@ -297,7 +297,7 @@ int gob_decode_complex128(double complex *v, char *buf, size_t buf_size)
   int n0, n1;
   if ((n0 = gob_decode_double(&re, buf, buf_size)) < 0)
     return n0;
-  if ((n1 = gob_decode_double(&re, &buf[n0], buf_size-n0)) < 0)
+  if ((n1 = gob_decode_double(&im, &buf[n0], buf_size-n0)) < 0)
     return n1;
   *v = re + im*I;
   return n0 + n1;

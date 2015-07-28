@@ -104,7 +104,7 @@ int glme_decode_value_uint32(glme_buf_t *dec, uint32_t *u)
 int glme_decode_value_int32(glme_buf_t *dec, int32_t *u)
 {
   int n;
-  uint64_t u64;
+  int64_t u64;
   n = glme_decode_value_int64(dec, &u64);
   *u = n < 0 ? 0 : (int32_t)u64;
   return n;
@@ -295,7 +295,7 @@ int glme_decode_complex64(glme_buf_t *dec, float complex *v)
 int glme_decode_vector(glme_buf_t *dec, void *s, size_t len)
 {
   int n;
-  int64_t dlen = 0;
+  uint64_t dlen = 0;
 
   // we accept BYTE arrays and STRINGs
   if (__peek_base_type(dec, GLME_VECTOR) < 0 &&
@@ -330,7 +330,7 @@ int glme_decode_vector(glme_buf_t *dec, void *s, size_t len)
 int glme_decode_bytes(glme_buf_t *dec, void **s, size_t len)
 {
   int n;
-  int64_t dlen = 0;
+  uint64_t dlen = 0;
   char *nb;
 
   n = gob_decode_uint64(&dlen, &dec->buf[dec->current], dec->count-dec->current);
@@ -365,7 +365,7 @@ int glme_decode_bytes(glme_buf_t *dec, void **s, size_t len)
 int glme_decode_string(glme_buf_t *dec, char **s)
 {
   int n;
-  int64_t dlen = 0;
+  uint64_t dlen = 0;
   char *nb;
 
   if (__decode_base_type(dec, GLME_STRING) < 0)
@@ -435,7 +435,7 @@ int glme_decode_delta_test(glme_buf_t *dec, unsigned int delta)
 int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags, 
                       void *vptr, size_t *nlen, size_t esize, glme_decoder_f dfunc)
 {
-  int n, elemtype, typeid;
+  int n, typeid;
   uint64_t offset, alen, __at_start = dec->current;
   void *nptr;
 
@@ -462,7 +462,7 @@ int glme_decode_field(glme_buf_t *dec, unsigned int *delta, int etype, int flags
   if (glme_decode_peek_type(dec, &typeid) < 0)
     return -1;
 
-  if (typeid == GLME_ARRAY && (flags & GLME_F_ARRAY == 0)) {
+  if (typeid == GLME_ARRAY && ((flags & GLME_F_ARRAY) == 0)) {
     // not expecting array
     dec->last_error = GLME_E_TYPE;
     return -1;

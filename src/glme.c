@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #ifdef __GLME_INLINE__
 #undef __GLME_INLINE__
@@ -13,6 +14,7 @@
 // define as empty
 #define __GLME_INLINE__
 
+#include "gobber.h"
 #include "glme.h"
 
 /*
@@ -110,7 +112,7 @@ int glme_buf_writem(glme_buf_t *enc, int fd)
 
 int glme_buf_readm(glme_buf_t *dec, int fd, size_t maxlen)
 {
-  int n, nc;
+  int n, nc = 0;
   uint64_t mlen;
   char tmp[12];
   glme_buf_t gbuf;
