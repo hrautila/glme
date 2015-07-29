@@ -55,6 +55,7 @@ if use_cython:
         ]
     cmdclass.update({'build_ext': build_ext})
 
+    ## this will recreate glme.c source file if glme.pyx changed
     class sdist(_sdist):
         def run(self):
             cythonize(['glme.pyx'])
@@ -69,16 +70,28 @@ else:
               )
         ]
 
+## Get long description from README.txt
+with open('README.txt') as file:
+    long_description = file.read()
 
 setup(
     name = 'glme',
     version = '0.1',
     description = 'A binary Gob Like Message Encoding',
+    long_description = long_description,
     author = 'Harri Rautila',
     author_email = 'harri.rautila@gmail.com',
     keywords = 'binary, encoding, message',
     license='BSD',
     url = 'https://github.com/hrautila/glme',
+    classifiers = [
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: BSD License',
+        'Topic :: Software Development :: Libraries',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: C',
+        ],
     cmdclass = cmdclass,
     ext_modules = ext_modules
 )
